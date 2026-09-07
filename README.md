@@ -32,4 +32,3 @@ flutter build apk --debug
 ```
 
 The default API base URL is `https://tktsapp.com/api/v1`. Use `--dart-define=API_BASE_URL=...` for non-production builds. Release signing remains in secure CI settings; no secret belongs in source code.
-
