@@ -1,0 +1,58 @@
+workflows:
+  android-release:
+    name: TKTSAPP Scanner Android
+    max_build_duration: 60
+    environment:
+      flutter: stable
+      groups:
+        - tktsapp_public
+    scripts:
+      - name: Prepare Flutter toolchain
+        script: flutter config --no-enable-swift-package-manager
+      - name: Clean Flutter build artifacts
+        script: flutter clean
+      - name: Get Flutter packages
+        script: flutter pub get
+      - name: Analyze
+        script: flutter analyze
+      - name: Run tests
+        script: flutter test
+      - name: Build APK and app bundle
+        script: |
+          flutter build apk --release --dart-define=API_BASE_URL=$API_BASE_URL --dart-define=ONESIGNAL_APP_ID=$ONESIGNAL_APP_ID
+          flutter build appbundle --release --dart-define=API_BASE_URL=$API_BASE_URL --dart-define=ONESIGNAL_APP_ID=$ONESIGNAL_APP_ID
+    artifacts:
+      - build/app/outputs/flutter-apk/app-release.apk
+      - build/app/outputs/bundle/release/app-release.aab
+
+  ios-release:
+    name: TKTSAPP Scanner iOS
+    max_build_duration: 60
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+      groups:
+        - tktsapp_public
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.tktsapp.tktsappScanner
+    scripts:
+      - name: Get Flutter packages
+        script: flutter pub get
+      - name: Install CocoaPods dependencies
+        script: |
+          cd ios
+          pod repo update
+          pod install
+      - name: Analyze
+        script: flutter analyze
+      - name: Run tests
+        script: flutter test
+      - name: Apply Codemagic App Store signing profile
+        script: xcode-project use-profiles
+      - name: Build IPA
+        script: flutter build ipa --release --export-options-plist=/Users/builder/export_options.plist --dart-define=API_BASE_URL=$API_BASE_URL --dart-define=ONESIGNAL_APP_ID=$ONESIGNAL_APP_ID
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
