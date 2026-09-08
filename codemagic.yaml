@@ -44,10 +44,10 @@ workflows:
         script: flutter analyze
       - name: Run tests
         script: flutter test
+      - name: Apply Codemagic App Store signing profile
+        script: xcode-project use-profiles
       - name: Build IPA
-        # Codemagic injects the matching App Store profile from ios_signing.
-        # Do not point Flutter to an implementation-specific export plist.
-        script: flutter build ipa --release --dart-define=API_BASE_URL=$API_BASE_URL --dart-define=ONESIGNAL_APP_ID=$ONESIGNAL_APP_ID
+        script: flutter build ipa --release --export-options-plist=/Users/builder/export_options.plist --dart-define=API_BASE_URL=$API_BASE_URL --dart-define=ONESIGNAL_APP_ID=$ONESIGNAL_APP_ID
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
