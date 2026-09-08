@@ -8,8 +8,10 @@ import 'package:uuid/uuid.dart';
 import 'src/core/api_client.dart';
 import 'src/core/staff_session.dart';
 
-const _primary = Color(0xFFD97757);
-const _bgDark = Color(0xFF1A1C1E);
+// TKTSAPP Scanner design tokens — kept local so scanning remains usable
+// without loading remote theme configuration.
+const _primary = Color(0xFF541627);
+const _bgDark = Color(0xFF181416);
 const _success = Color(0xFF10B981);
 const _gold = Color(0xFFB89A6A);
 const _red = Color(0xFFB42318);
@@ -18,7 +20,7 @@ const _red = Color(0xFFB42318);
 const _burgundy = _primary;
 const _oxblood = Color(0xFF260A11);
 const _charcoal = _bgDark;
-const _ivory = Color(0xFFF9F7F2);
+const _ivory = Color(0xFFF4EFE8);
 const _green = _success;
 
 void main() => runApp(const ScannerApp());
@@ -109,9 +111,7 @@ ThemeData _theme() {
     useMaterial3: true,
     colorScheme: scheme,
     scaffoldBackgroundColor: _ivory,
-    textTheme: GoogleFonts.plusJakartaSansTextTheme(
-      ThemeData.light().textTheme,
-    ),
+    textTheme: GoogleFonts.manropeTextTheme(ThemeData.light().textTheme),
     appBarTheme: const AppBarTheme(
       backgroundColor: _ivory,
       foregroundColor: _charcoal,
@@ -119,18 +119,18 @@ ThemeData _theme() {
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: Color(0xFFECE7E1),
+      fillColor: const Color(0xFFEAE3DB),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
         borderSide: BorderSide.none,
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Color(0x1AFFFFFF)),
+        borderRadius: BorderRadius.circular(10),
+        borderSide: const BorderSide(color: Color(0x1A541627)),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
         borderSide: const BorderSide(color: _primary, width: 1.5),
       ),
     ),
@@ -985,16 +985,13 @@ class _ScannerPageState extends State<ScannerPage> {
   // Station is resolved automatically for the selected event/session.
   bool get _canStart => _event != null && _session != null;
 
-  Map<String, dynamic>? get _selectedSessionValue {
-    if (_session == null) return null;
-    for (final item in _sessions) {
-      if (item['id']?.toString() == _session!['id']?.toString() &&
-          item['name']?.toString() == _session!['name']?.toString()) {
-        return item;
-      }
-    }
-    return null;
-  }
+  String _eventValue(Map<String, dynamic> event) => event['id'].toString();
+
+  String _sessionValue(Map<String, dynamic> session) =>
+      '${session['id'] ?? 'main'}:${session['starts_at'] ?? session['name'] ?? ''}';
+
+  String _stationValue(Map<String, dynamic> station) =>
+      station['id'].toString();
 
   @override
   void initState() {
@@ -1213,15 +1210,15 @@ class _ScannerPageState extends State<ScannerPage> {
                 style: TextStyle(color: Color(0xFF6E6863)),
               ),
               const SizedBox(height: 20),
-              DropdownButtonFormField<Map<String, dynamic>>(
+              DropdownButtonFormField<String>(
                 key: ValueKey('scan-event-${_event?['id']}'),
-                initialValue: _event,
+                initialValue: _event == null ? null : _eventValue(_event!),
                 isExpanded: true,
                 decoration: const InputDecoration(labelText: 'Event'),
                 items: _events
                     .map(
-                      (event) => DropdownMenuItem(
-                        value: event,
+                      (event) => DropdownMenuItem<String>(
+                        value: _eventValue(event),
                         child: Text(
                           event['name']?.toString() ?? 'Event',
                           overflow: TextOverflow.ellipsis,
@@ -1230,7 +1227,11 @@ class _ScannerPageState extends State<ScannerPage> {
                     )
                     .toList(),
                 onChanged: (value) async {
-                  await _chooseEvent(value);
+                  final matches = _events
+                      .where((item) => _eventValue(item) == value)
+                      .toList();
+                  final event = matches.isEmpty ? null : matches.first;
+                  await _chooseEvent(event);
                   setSheetState(() {});
                   if (mounted) {
                     setState(() {});
@@ -1239,11 +1240,13 @@ class _ScannerPageState extends State<ScannerPage> {
                 },
               ),
               const SizedBox(height: 12),
-              DropdownButtonFormField<Map<String, dynamic>>(
+              DropdownButtonFormField<String>(
                 key: ValueKey(
                   'scan-session-${_event?['id']}-${_session?['id']}',
                 ),
-                initialValue: _selectedSessionValue,
+                initialValue: _session == null
+                    ? null
+                    : _sessionValue(_session!),
                 isExpanded: true,
                 decoration: const InputDecoration(
                   labelText: 'Date & time / session',
@@ -1251,8 +1254,8 @@ class _ScannerPageState extends State<ScannerPage> {
                 hint: const Text('Choose the session you are working'),
                 items: _sessions
                     .map(
-                      (session) => DropdownMenuItem(
-                        value: session,
+                      (session) => DropdownMenuItem<String>(
+                        value: _sessionValue(session),
                         child: Text(
                           _sessionLabel(session),
                           overflow: TextOverflow.ellipsis,
@@ -1263,22 +1266,26 @@ class _ScannerPageState extends State<ScannerPage> {
                 onChanged: _event == null
                     ? null
                     : (value) async {
-                        await _chooseSession(value);
+                        final matches = _sessions
+                            .where((item) => _sessionValue(item) == value)
+                            .toList();
+                        final selected = matches.isEmpty ? null : matches.first;
+                        await _chooseSession(selected);
                         setSheetState(() {});
                       },
               ),
               const SizedBox(height: 12),
-              DropdownButtonFormField<Map<String, dynamic>>(
+              DropdownButtonFormField<String>(
                 key: ValueKey(
                   'scan-station-${_event?['id']}-${_device?['id']}',
                 ),
-                initialValue: _device,
+                initialValue: _device == null ? null : _stationValue(_device!),
                 isExpanded: true,
                 decoration: const InputDecoration(labelText: 'Scanner station'),
                 items: _devices
                     .map(
-                      (device) => DropdownMenuItem(
-                        value: device,
+                      (device) => DropdownMenuItem<String>(
+                        value: _stationValue(device),
                         child: Text(
                           device['label']?.toString() ??
                               'Scanner ${device['id']}',
@@ -1290,7 +1297,11 @@ class _ScannerPageState extends State<ScannerPage> {
                 onChanged: _session == null
                     ? null
                     : (value) {
-                        setState(() => _device = value);
+                        final matches = _devices
+                            .where((item) => _stationValue(item) == value)
+                            .toList();
+                        final selected = matches.isEmpty ? null : matches.first;
+                        setState(() => _device = selected);
                         setSheetState(() {});
                       },
               ),
@@ -2481,3 +2492,4 @@ String _sentence(Object? value) => (value?.toString() ?? 'Scan declined')
           part.isEmpty ? part : '${part[0].toUpperCase()}${part.substring(1)}',
     )
     .join(' ');
+
