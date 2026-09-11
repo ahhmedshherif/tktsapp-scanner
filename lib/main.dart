@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:uuid/uuid.dart';
@@ -1075,6 +1076,25 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
                                     ),
                                   ),
                           ),
+                          const SizedBox(height: 12),
+                          OutlinedButton.icon(
+                            onPressed: _working
+                                ? null
+                                : () => Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) => QuickScannerLoginPage(
+                                        api: widget.api,
+                                        onSignedIn: widget.onSignedIn,
+                                      ),
+                                    ),
+                                  ),
+                            icon: const Icon(Icons.qr_code_scanner_rounded),
+                            label: const Text('Quick login with Event QR'),
+                            style: OutlinedButton.styleFrom(
+                              minimumSize: const Size.fromHeight(50),
+                              foregroundColor: _burgundy,
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -1082,6 +1102,106 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
                     const _SecurityNote(),
                   ],
                 ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class QuickScannerLoginPage extends StatefulWidget {
+  const QuickScannerLoginPage({
+    super.key,
+    required this.api,
+    required this.onSignedIn,
+  });
+  final ApiClient api;
+  final Future<void> Function(StaffSession) onSignedIn;
+  @override
+  State<QuickScannerLoginPage> createState() => _QuickScannerLoginPageState();
+}
+
+class _QuickScannerLoginPageState extends State<QuickScannerLoginPage> {
+  final _camera = MobileScannerController(
+    formats: const [BarcodeFormat.qrCode],
+    detectionSpeed: DetectionSpeed.noDuplicates,
+  );
+  bool _working = false;
+  Future<void> _detect(BarcodeCapture capture) async {
+    if (_working) return;
+    final value = capture.barcodes.isEmpty
+        ? ''
+        : (capture.barcodes.first.rawValue?.trim() ?? '');
+    if (!value.startsWith('TKTSAPP_SCANNER_LOGIN:')) return;
+    setState(() => _working = true);
+    await _camera.stop();
+    try {
+      final response = await widget.api.post(
+        '/mobile/auth/staff/quick-login',
+        data: {'qr_payload': value, 'device_name': 'TKTSAPP Scanner'},
+      );
+      final token = response['access_token']?.toString();
+      if (token == null || response['user'] is! Map)
+        throw const ApiFailure(
+          'The QR code could not start a scanner session.',
+        );
+      await widget.onSignedIn(
+        StaffSession(token, Map<String, dynamic>.from(response['user'] as Map)),
+      );
+    } on ApiFailure catch (error) {
+      if (mounted) _message(context, error.message, error: true);
+      await _camera.start();
+      if (mounted) setState(() => _working = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _camera.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    backgroundColor: Colors.black,
+    appBar: AppBar(
+      backgroundColor: _charcoal,
+      foregroundColor: Colors.white,
+      title: const Text('Quick event login'),
+    ),
+    body: Stack(
+      children: [
+        MobileScanner(controller: _camera, onDetect: _detect),
+        Center(
+          child: Container(
+            width: 240,
+            height: 240,
+            decoration: BoxDecoration(
+              border: Border.all(color: _gold, width: 3),
+              borderRadius: BorderRadius.circular(22),
+            ),
+          ),
+        ),
+        Positioned(
+          left: 24,
+          right: 24,
+          bottom: 42,
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.black87,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Text(
+              _working
+                  ? 'Signing in securely…'
+                  : 'Scan the Event Quick Login QR from the organizer dashboard.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),
@@ -1300,11 +1420,6 @@ class _StaffShellState extends State<StaffShell> {
   Widget build(BuildContext context) {
     // Role-based navigation
     final isScanner = widget.session.role == 'scanner';
-    final isManagerOrAnalyst =
-        widget.session.role == 'manager' ||
-        widget.session.role == 'analyst' ||
-        widget.session.isAdmin;
-
     final pages = <Widget>[
       OverviewPage(
         api: widget.api,
@@ -1312,7 +1427,11 @@ class _StaffShellState extends State<StaffShell> {
       ), // Home (Analytics for managers, standard for others)
       if (!isScanner) EventsPage(api: widget.api, session: widget.session),
       if (widget.session.canScan)
-        ScannerPage(api: widget.api, session: widget.session),
+        ScannerPage(
+          api: widget.api,
+          session: widget.session,
+          onBack: () => setState(() => _index = 0),
+        ),
       if (widget.session.canManageTeam) TeamPage(api: widget.api),
       ProfilePage(
         api: widget.api,
@@ -1355,68 +1474,56 @@ class _StaffShellState extends State<StaffShell> {
 
     if (_index >= pages.length) _index = 0;
 
-    // Determine the index of the scanner page to hide bottom nav
-    int scannerIndex = -1;
-    if (widget.session.canScan) {
-      if (isScanner)
-        scannerIndex = 1; // [Home, Scan, Account]
-      else if (isManagerOrAnalyst && widget.session.canManageTeam)
-        scannerIndex = 2; // [Home, Events, Scan, Team, Account]
-      else
-        scannerIndex = 2; // [Home, Events, Scan, Account]
-    }
-
-    final scannerIsOpen = _index == scannerIndex;
     return Scaffold(
       backgroundColor: _ivory,
-      body: scannerIsOpen
-          ? AnimatedSwitcher(
-              duration: const Duration(milliseconds: 260),
-              switchInCurve: Curves.easeOutCubic,
-              child: KeyedSubtree(key: ValueKey(_index), child: pages[_index]),
-            )
-          : SafeArea(
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 260),
-                switchInCurve: Curves.easeOutCubic,
-                child: KeyedSubtree(
-                  key: ValueKey(_index),
-                  child: pages[_index],
-                ),
-              ),
+      body: SafeArea(
+        bottom: false,
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 320),
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeInCubic,
+          transitionBuilder: (child, animation) => FadeTransition(
+            opacity: animation,
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(.025, 0),
+                end: Offset.zero,
+              ).animate(animation),
+              child: child,
             ),
-      bottomNavigationBar: scannerIsOpen
-          ? null
-          : Container(
-              decoration: const BoxDecoration(
-                border: Border(top: BorderSide(color: _gold, width: 1)),
-                boxShadow: [
-                  BoxShadow(
-                    color: Color(0x0A5C061F),
-                    blurRadius: 20,
-                    offset: Offset(0, -4),
-                  ),
-                ],
-              ),
-              child: NavigationBar(
-                selectedIndex: _index,
-                onDestinationSelected: (value) =>
-                    setState(() => _index = value),
-                destinations: items,
-                backgroundColor: Colors.white,
-                indicatorColor: _gold.withValues(alpha: .16),
-                surfaceTintColor: Colors.transparent,
-                labelTextStyle: WidgetStateProperty.resolveWith(
-                  (states) => GoogleFonts.spaceGrotesk(
-                    fontSize: 10,
-                    fontWeight: states.contains(WidgetState.selected)
-                        ? FontWeight.w700
-                        : FontWeight.w500,
-                    letterSpacing: .15,
-                  ),
-                ),
-              ),
+          ),
+          child: KeyedSubtree(key: ValueKey(_index), child: pages[_index]),
+        ),
+      ),
+      bottomNavigationBar: Container(
+        decoration: const BoxDecoration(
+          border: Border(top: BorderSide(color: _gold, width: 1)),
+          boxShadow: [
+            BoxShadow(
+              color: Color(0x0A5C061F),
+              blurRadius: 20,
+              offset: Offset(0, -4),
             ),
+          ],
+        ),
+        child: NavigationBar(
+          selectedIndex: _index,
+          onDestinationSelected: (value) => setState(() => _index = value),
+          destinations: items,
+          backgroundColor: Colors.white,
+          indicatorColor: _gold.withValues(alpha: .16),
+          surfaceTintColor: Colors.transparent,
+          labelTextStyle: WidgetStateProperty.resolveWith(
+            (states) => GoogleFonts.spaceGrotesk(
+              fontSize: 10,
+              fontWeight: states.contains(WidgetState.selected)
+                  ? FontWeight.w700
+                  : FontWeight.w500,
+              letterSpacing: .15,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -1428,10 +1535,9 @@ class OverviewPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isManagerOrAnalyst =
-        session.role == 'manager' ||
-        session.role == 'analyst' ||
-        session.isAdmin;
+    // Kept as a server-controlled escape hatch while the new Home rolls out.
+    // No API currently enables it, so all staff get Operations Pulse.
+    final isManagerOrAnalyst = session.user['legacy_home'] != true;
 
     if (isManagerOrAnalyst) {
       return _AnalyticsDashboard(api: api, session: session);
@@ -1537,43 +1643,34 @@ class _AnalyticsDashboardState extends State<_AnalyticsDashboard> {
         _selectedEventId = _events.first['id']?.toString();
       }
 
-      // 2. Fetch dashboard data (either specific event or general)
-      if (_selectedEventId != null) {
-        // Fetch detailed analytics for the selected event using the event detail endpoint
+      // Always start from the scoped workspace summary. Scanner-only accounts
+      // never receive organizer revenue and are kept on this safe data set.
+      final summaryRes = await widget.api.get(
+        widget.session.isAdmin
+            ? '/mobile/admin/dashboard'
+            : '/mobile/staff/dashboard',
+      );
+      _dashboardData = Map<String, dynamic>.from(
+        summaryRes['data'] as Map? ?? const {},
+      );
+
+      // Enrich the selected event only for roles authorized to view analytics.
+      if (_selectedEventId != null && widget.session.canSeeAnalytics) {
         final detailRes = await widget.api.get(
           '/mobile/staff/events/$_selectedEventId',
         );
         final details = Map<String, dynamic>.from(
           detailRes['data'] as Map? ?? {},
         );
-        _dashboardData = Map<String, dynamic>.from(
+        final analytics = Map<String, dynamic>.from(
           details['analytics'] as Map? ?? {},
         );
-
-        // Also capture event capacity/attendance if present in details, falling back to analytics block
-        _dashboardData!['event_name'] = details['name'];
-        _dashboardData!['venue_name'] = details['venue']?['name'];
-
-        // Mocking some live data fields for the creative presentation if they don't exist
-        if (!_dashboardData!.containsKey('total_attendance')) {
-          final scanned =
-              double.tryParse(
-                _value(details['analytics']?['total_scans'] ?? 0),
-              )?.toInt() ??
-              0;
-          _dashboardData!['total_attendance'] = scanned;
-          _dashboardData!['total_capacity'] =
-              details['capacity'] ?? (scanned + 150); // Fallback mock capacity
-        }
-      } else {
-        final dashRes = await widget.api.get(
-          widget.session.isAdmin
-              ? '/mobile/admin/dashboard'
-              : '/mobile/staff/dashboard',
-        );
-        _dashboardData = Map<String, dynamic>.from(
-          dashRes['data'] as Map? ?? {},
-        );
+        _dashboardData!.addAll(analytics);
+        _dashboardData!.addAll({
+          'event_name': details['name'],
+          'venue_name': (details['venue'] as Map?)?['name'],
+          'event_capacity': details['capacity'],
+        });
       }
     } catch (e) {
       _error = true;
@@ -1585,8 +1682,8 @@ class _AnalyticsDashboardState extends State<_AnalyticsDashboard> {
   @override
   Widget build(BuildContext context) {
     return _PageFrame(
-      title: 'Dashboard',
-      subtitle: 'Live attendance, velocity and operational intelligence.',
+      title: 'Operations pulse',
+      subtitle: 'A focused view of your event floor in real time.',
       action: IconButton(
         onPressed: _loadData,
         icon: const Icon(Icons.refresh_rounded, color: _burgundy),
@@ -1598,100 +1695,44 @@ class _AnalyticsDashboardState extends State<_AnalyticsDashboard> {
           : Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (_events.isNotEmpty) ...[
-                  // Event Filter Dropdown
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: const Color(0xFFEADFC9),
-                        width: 1,
-                      ),
-                    ),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<String>(
-                        isExpanded: true,
-                        value: _selectedEventId,
-                        icon: const Icon(
-                          Icons.keyboard_arrow_down_rounded,
-                          color: _primary,
-                        ),
-                        items: _events.map((e) {
-                          return DropdownMenuItem<String>(
-                            value: e['id']?.toString(),
-                            child: Text(
-                              e['name']?.toString() ?? 'Unknown Event',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                                color: _charcoal,
-                              ),
-                            ),
-                          );
-                        }).toList(),
-                        onChanged: (val) {
-                          if (val != null) {
-                            setState(() => _selectedEventId = val);
-                            _loadData();
-                          }
-                        },
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                ],
-
                 if (_dashboardData != null) ...[
-                  // Main Attendance Progress
-                  if (_dashboardData!.containsKey('total_attendance') &&
-                      _dashboardData!.containsKey('total_capacity')) ...[
-                    _LiveAttendanceRing(
-                      attendance: _dashboardData!['total_attendance'] as num,
-                      capacity: _dashboardData!['total_capacity'] as num,
+                  _OperationsHero(
+                    name: widget.session.user['name']?.toString(),
+                    role: widget.session.role,
+                    eventName: _dashboardData!['event_name']?.toString(),
+                    venueName: _dashboardData!['venue_name']?.toString(),
+                    canScan: widget.session.canScan,
+                  ),
+                  const SizedBox(height: 20),
+                  if (_events.isNotEmpty) ...[
+                    _EventPulseSelector(
+                      events: _events,
+                      selectedEventId: _selectedEventId,
+                      onChanged: (value) {
+                        setState(() => _selectedEventId = value);
+                        _loadData();
+                      },
                     ),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 20),
                   ],
-
-                  const Text(
-                    'Metrics overview',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 16,
-                      color: _charcoal,
+                  _PulseMetricGrid(
+                    data: _dashboardData!,
+                    showRevenue: widget.session.canSeeAnalytics,
+                  ),
+                  const SizedBox(height: 20),
+                  _ReadinessCard(
+                    attendees: _asInt(
+                      _dashboardData!['total_attendees'] ??
+                          _dashboardData!['tickets_sold'] ??
+                          _dashboardData!['tickets'],
                     ),
+                    attended: _asInt(_dashboardData!['total_attended']),
+                    devices: _asInt(_dashboardData!['scanner_devices']),
+                    capacity: _asInt(_dashboardData!['event_capacity']),
+                    canScan: widget.session.canScan,
                   ),
-                  const SizedBox(height: 12),
-
-                  // Metrics Grid
-                  GridView.count(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    crossAxisCount: MediaQuery.sizeOf(context).width > 640
-                        ? 3
-                        : 2,
-                    mainAxisSpacing: 12,
-                    crossAxisSpacing: 12,
-                    childAspectRatio: 1.3,
-                    children: _dashboardData!.entries
-                        .where(
-                          (e) =>
-                              e.key != 'user' &&
-                              e.key != 'event_name' &&
-                              e.key != 'venue_name' &&
-                              e.key != 'total_attendance' &&
-                              e.key != 'total_capacity' &&
-                              e.value != null,
-                        )
-                        .map(
-                          (row) =>
-                              _Metric(label: row.key, value: _value(row.value)),
-                        )
-                        .toList(),
-                  ),
+                  const SizedBox(height: 20),
+                  _SecurityBanner(role: widget.session.role),
                 ],
               ],
             ),
@@ -1699,102 +1740,302 @@ class _AnalyticsDashboardState extends State<_AnalyticsDashboard> {
   }
 }
 
-class _LiveAttendanceRing extends StatelessWidget {
-  const _LiveAttendanceRing({required this.attendance, required this.capacity});
-  final num attendance;
-  final num capacity;
+class _OperationsHero extends StatelessWidget {
+  const _OperationsHero({
+    required this.name,
+    required this.role,
+    required this.eventName,
+    required this.venueName,
+    required this.canScan,
+  });
+  final String? name;
+  final String role;
+  final String? eventName;
+  final String? venueName;
+  final bool canScan;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(20),
+    decoration: BoxDecoration(
+      borderRadius: BorderRadius.circular(20),
+      gradient: const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [_oxblood, _primary, Color(0xFF7B2740)],
+      ),
+      boxShadow: [
+        BoxShadow(
+          color: _primary.withValues(alpha: .24),
+          blurRadius: 28,
+          offset: const Offset(0, 12),
+        ),
+      ],
+    ),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 52,
+          height: 52,
+          decoration: BoxDecoration(
+            color: _gold.withValues(alpha: .18),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: _gold.withValues(alpha: .6)),
+          ),
+          child: Icon(
+            canScan ? Icons.qr_code_scanner_rounded : Icons.insights_rounded,
+            color: _gold,
+          ),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                _greeting(name),
+                style: GoogleFonts.spaceGrotesk(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 20,
+                ),
+              ),
+              const SizedBox(height: 5),
+              Text(
+                eventName?.isNotEmpty == true
+                    ? eventName!
+                    : 'Your assigned event workspace',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Colors.white70, fontSize: 12),
+              ),
+              if (venueName?.isNotEmpty == true) ...[
+                const SizedBox(height: 3),
+                Text(
+                  venueName!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: _gold.withValues(alpha: .95),
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        const _LiveChip(label: 'LIVE'),
+      ],
+    ),
+  );
+}
+
+class _EventPulseSelector extends StatelessWidget {
+  const _EventPulseSelector({
+    required this.events,
+    required this.selectedEventId,
+    required this.onChanged,
+  });
+  final List<Map<String, dynamic>> events;
+  final String? selectedEventId;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 5),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(14),
+      border: Border.all(color: _gold.withValues(alpha: .38)),
+    ),
+    child: DropdownButtonHideUnderline(
+      child: DropdownButton<String>(
+        value: selectedEventId,
+        isExpanded: true,
+        icon: const Icon(Icons.expand_more_rounded, color: _primary),
+        items: events
+            .map(
+              (event) => DropdownMenuItem(
+                value: event['id']?.toString(),
+                child: Text(
+                  event['name']?.toString() ?? 'Untitled event',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+            )
+            .toList(),
+        onChanged: (value) {
+          if (value != null) onChanged(value);
+        },
+      ),
+    ),
+  );
+}
+
+class _PulseMetricGrid extends StatelessWidget {
+  const _PulseMetricGrid({required this.data, required this.showRevenue});
+  final Map<String, dynamic> data;
+  final bool showRevenue;
 
   @override
   Widget build(BuildContext context) {
-    final cap = capacity == 0 ? 1 : capacity;
-    final progress = (attendance / cap).clamp(0.0, 1.0);
-    final percent = (progress * 100).toInt();
+    final attendees = _asInt(
+      data['total_attendees'] ?? data['tickets_sold'] ?? data['tickets'],
+    );
+    final attended = _asInt(data['total_attended']);
+    final devices = _asInt(data['scanner_devices']);
+    final compact = MediaQuery.sizeOf(context).width < 390;
 
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'LIVE OPERATIONS',
+          style: TextStyle(
+            color: _smoke,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 1.3,
+            fontSize: 11,
+          ),
+        ),
+        const SizedBox(height: 10),
+        _PulseHeroMetric(attendees: attendees, attended: attended),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: _PulseMiniMetric(
+                label: 'Total attended',
+                value: _value(attended),
+                caption: attendees > 0
+                    ? '${((attended / attendees) * 100).round()}% checked in'
+                    : 'Waiting for arrivals',
+                icon: Icons.how_to_reg_rounded,
+                color: _success,
+                compact: compact,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _PulseMiniMetric(
+                label: 'Scanner fleet',
+                value: _value(devices),
+                caption: devices == 1 ? 'Device online' : 'Devices online',
+                icon: Icons.sensors_rounded,
+                color: _success,
+                compact: compact,
+              ),
+            ),
+          ],
+        ),
+        if (showRevenue) ...[
+          const SizedBox(height: 12),
+          _PulseRevenueMetric(value: 'EGP ${_value(data['revenue'])}'),
+        ],
+      ],
+    );
+  }
+}
+
+class _PulseHeroMetric extends StatelessWidget {
+  const _PulseHeroMetric({required this.attendees, required this.attended});
+  final int attendees;
+  final int attended;
+
+  @override
+  Widget build(BuildContext context) {
+    final duration = MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : const Duration(milliseconds: 520);
     return Container(
-      padding: const EdgeInsets.all(24),
+      height: 144,
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFEADFC9), width: 1),
-        boxShadow: const [
+        gradient: const LinearGradient(
+          colors: [_primary, _oxblood],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        boxShadow: [
           BoxShadow(
-            color: Color(0x0A5C061F),
-            blurRadius: 16,
-            offset: Offset(0, 4),
+            color: _primary.withValues(alpha: .22),
+            blurRadius: 22,
+            offset: const Offset(0, 10),
           ),
         ],
       ),
-      child: Row(
+      child: Stack(
         children: [
-          SizedBox(
-            width: 100,
-            height: 100,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                CircularProgressIndicator(
-                  value: 1.0,
-                  strokeWidth: 12,
-                  color: _primary.withValues(alpha: 0.08),
+          Positioned(
+            right: -31,
+            top: -57,
+            child: Container(
+              height: 177,
+              width: 177,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: .13),
+                  width: 28,
                 ),
-                CircularProgressIndicator(
-                  value: progress,
-                  strokeWidth: 12,
-                  backgroundColor: Colors.transparent,
-                  color: _primary,
-                  strokeCap: StrokeCap.round,
-                ),
-                Text(
-                  '$percent%',
-                  style: GoogleFonts.spaceGrotesk(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700,
-                    color: _primary,
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
-          const SizedBox(width: 24),
-          Expanded(
+          Positioned(
+            right: 22,
+            bottom: 19,
+            child: Icon(
+              Icons.qr_code_scanner_rounded,
+              color: Colors.white.withValues(alpha: .18),
+              size: 54,
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(18),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Live Attendance',
-                  style: TextStyle(
-                    color: Color(0xFF8A7870),
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 1,
-                    fontSize: 12,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                RichText(
-                  text: TextSpan(
-                    style: GoogleFonts.spaceGrotesk(
-                      color: _charcoal,
-                      fontSize: 32,
-                      fontWeight: FontWeight.w800,
-                    ),
-                    children: [
-                      TextSpan(text: attendance.toInt().toString()),
-                      TextSpan(
-                        text: ' / ${capacity.toInt()}',
-                        style: TextStyle(
-                          color: _charcoal.withValues(alpha: .4),
-                          fontSize: 20,
-                        ),
+                const Row(
+                  children: [
+                    _LiveChip(label: 'LIVE'),
+                    SizedBox(width: 8),
+                    Text(
+                      'TOTAL ATTENDEES',
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 11,
+                        letterSpacing: 1.1,
+                        fontWeight: FontWeight.w800,
                       ),
-                    ],
+                    ),
+                  ],
+                ),
+                const Spacer(),
+                TweenAnimationBuilder<double>(
+                  tween: Tween(begin: 0, end: attendees.toDouble()),
+                  duration: duration,
+                  curve: Curves.easeOutCubic,
+                  builder: (context, value, child) => Text(
+                    _value(value.round()),
+                    style: GoogleFonts.spaceGrotesk(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 35,
+                      height: .95,
+                    ),
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 5),
                 Text(
-                  'Guests scanned in.',
-                  style: TextStyle(
-                    color: _charcoal.withValues(alpha: .6),
-                    fontSize: 13,
+                  '$attended checked in so far',
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
                   ),
                 ),
               ],
@@ -1805,6 +2046,229 @@ class _LiveAttendanceRing extends StatelessWidget {
     );
   }
 }
+
+class _PulseMiniMetric extends StatelessWidget {
+  const _PulseMiniMetric({
+    required this.label,
+    required this.value,
+    required this.caption,
+    required this.icon,
+    required this.color,
+    required this.compact,
+  });
+  final String label;
+  final String value;
+  final String caption;
+  final IconData icon;
+  final Color color;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: EdgeInsets.all(compact ? 13 : 15),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: color.withValues(alpha: .16)),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              width: 31,
+              height: 31,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: .11),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, size: 17, color: color),
+            ),
+            const Spacer(),
+            Icon(
+              Icons.arrow_outward_rounded,
+              color: _smoke.withValues(alpha: .55),
+              size: 16,
+            ),
+          ],
+        ),
+        SizedBox(height: compact ? 11 : 14),
+        Text(
+          value,
+          style: GoogleFonts.spaceGrotesk(
+            fontSize: compact ? 23 : 26,
+            height: 1,
+            fontWeight: FontWeight.w800,
+            color: _charcoal,
+          ),
+        ),
+        const SizedBox(height: 5),
+        Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w800,
+            color: _charcoal,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          caption,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 10, color: _smoke),
+        ),
+      ],
+    ),
+  );
+}
+
+class _PulseRevenueMetric extends StatelessWidget {
+  const _PulseRevenueMetric({required this.value});
+  final String value;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 13),
+    decoration: BoxDecoration(
+      color: const Color(0xFFFFFAF1),
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: _gold.withValues(alpha: .38)),
+    ),
+    child: Row(
+      children: [
+        Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+            color: _gold.withValues(alpha: .17),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: const Icon(
+            Icons.account_balance_wallet_outlined,
+            color: _gold,
+            size: 20,
+          ),
+        ),
+        const SizedBox(width: 11),
+        const Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Gross sales',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+              ),
+              SizedBox(height: 2),
+              Text(
+                'Selected-event revenue',
+                style: TextStyle(fontSize: 10, color: _smoke),
+              ),
+            ],
+          ),
+        ),
+        Text(
+          value,
+          style: GoogleFonts.spaceGrotesk(
+            fontWeight: FontWeight.w800,
+            fontSize: 17,
+            color: _charcoal,
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _ReadinessCard extends StatelessWidget {
+  const _ReadinessCard({
+    required this.attendees,
+    required this.attended,
+    required this.devices,
+    required this.capacity,
+    required this.canScan,
+  });
+  final int attendees;
+  final int attended;
+  final int devices;
+  final int capacity;
+  final bool canScan;
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = attendees > 0
+        ? (attended / attendees).clamp(0.0, 1.0)
+        : 0.0;
+    final label = attendees > 0
+        ? '${(progress * 100).round()}% attendance right now'
+        : 'Waiting for the first attendee';
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF7F1EA),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: _gold.withValues(alpha: .35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: _primary,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  canScan ? Icons.radar_rounded : Icons.monitor_heart_outlined,
+                  color: Colors.white,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 11),
+              const Expanded(
+                child: Text(
+                  'Floor readiness',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                ),
+              ),
+              _LiveChip(label: devices > 0 ? '$devices ONLINE' : 'SETUP'),
+            ],
+          ),
+          const SizedBox(height: 16),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(99),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 8,
+              color: _primary,
+              backgroundColor: _gold.withValues(alpha: .2),
+            ),
+          ),
+          const SizedBox(height: 9),
+          Text(label, style: const TextStyle(color: _smoke, fontSize: 12)),
+          const SizedBox(height: 14),
+          Text(
+            '$attended of $attendees attendees have been checked in.',
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: _charcoal,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+int _asInt(Object? value) =>
+    value is num ? value.toInt() : int.tryParse(value?.toString() ?? '') ?? 0;
 
 class EventsPage extends StatefulWidget {
   const EventsPage({super.key, required this.api, required this.session});
@@ -2166,9 +2630,15 @@ class EventDetailPage extends StatelessWidget {
 }
 
 class ScannerPage extends StatefulWidget {
-  const ScannerPage({super.key, required this.api, required this.session});
+  const ScannerPage({
+    super.key,
+    required this.api,
+    required this.session,
+    this.onBack,
+  });
   final ApiClient api;
   final StaffSession session;
+  final VoidCallback? onBack;
   @override
   State<ScannerPage> createState() => _ScannerPageState();
 }
@@ -2326,6 +2796,13 @@ class _ScannerPageState extends State<ScannerPage> {
     if (mounted) await _camera.start();
   }
 
+  Future<void> _leaveScanner() async {
+    if (_isScanning) await _camera.stop();
+    if (!mounted) return;
+    setState(() => _isScanning = false);
+    widget.onBack?.call();
+  }
+
   String _sessionLabel(Map<String, dynamic> session) {
     final name = session['name']?.toString() ?? 'Session';
     final raw = session['starts_at']?.toString();
@@ -2394,6 +2871,7 @@ class _ScannerPageState extends State<ScannerPage> {
       );
 
       final isValid = result['status'] == 'valid';
+      await _scanFeedback(success: isValid);
       if (isInitial && !_autoAdmit && currentAction != 'validate' && isValid) {
         await _showResult(
           result,
@@ -2406,6 +2884,7 @@ class _ScannerPageState extends State<ScannerPage> {
         await _showResult(result);
       }
     } on ApiFailure catch (error) {
+      await _scanFeedback(success: false);
       if (mounted) _message(context, error.message, error: true);
     } finally {
       if (mounted) {
@@ -2413,6 +2892,21 @@ class _ScannerPageState extends State<ScannerPage> {
         if (_useCamera && _isScanning) await _camera.start();
       }
     }
+  }
+
+  Future<void> _scanFeedback({required bool success}) async {
+    if (success) {
+      await Future.wait<void>([
+        SystemSound.play(SystemSoundType.click),
+        HapticFeedback.mediumImpact(),
+      ]);
+      return;
+    }
+
+    await Future.wait<void>([
+      SystemSound.play(SystemSoundType.alert),
+      HapticFeedback.heavyImpact(),
+    ]);
   }
 
   Future<void> _showResult(
@@ -2686,7 +3180,17 @@ class _ScannerPageState extends State<ScannerPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const _StitchAppHeader(),
+                  Row(
+                    children: [
+                      IconButton.filledTonal(
+                        tooltip: 'Back to Home',
+                        onPressed: _leaveScanner,
+                        icon: const Icon(Icons.arrow_back_rounded),
+                      ),
+                      const SizedBox(width: 10),
+                      const Expanded(child: _StitchAppHeader()),
+                    ],
+                  ),
                   const SizedBox(height: 28),
                   Row(
                     children: [
@@ -2940,11 +3444,8 @@ class _ScannerPageState extends State<ScannerPage> {
                       Row(
                         children: [
                           IconButton.filledTonal(
-                            tooltip: 'Back to setup',
-                            onPressed: () {
-                              _camera.stop();
-                              setState(() => _isScanning = false);
-                            },
+                            tooltip: 'Back to Home',
+                            onPressed: _leaveScanner,
                             icon: const Icon(Icons.arrow_back_rounded),
                           ),
                           const SizedBox(width: 12),
@@ -3866,6 +4367,23 @@ class ProfilePage extends StatelessWidget {
                   title: 'Two-factor authentication',
                   subtitle: twoFactor,
                 ),
+                _SettingsTile(
+                  icon: Icons.password_rounded,
+                  title: 'Change password',
+                  subtitle: 'Use your current password to secure this account',
+                  onTap: () => _showStaffPasswordDialog(context, api),
+                ),
+                _SettingsTile(
+                  icon: Icons.history_rounded,
+                  title: 'Scan history',
+                  subtitle: 'Serial, status and scan time only',
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ScanHistoryPage(api: api),
+                    ),
+                  ),
+                ),
                 const _SettingsTile(
                   icon: Icons.pin_outlined,
                   title: 'Passcode & terminal PIN',
@@ -4012,13 +4530,16 @@ class _SettingsTile extends StatelessWidget {
     required this.icon,
     required this.title,
     required this.subtitle,
+    this.onTap,
   });
   final IconData icon;
   final String title;
   final String subtitle;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) => ListTile(
+    onTap: onTap,
     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
     leading: Container(
       width: 36,
@@ -4037,12 +4558,201 @@ class _SettingsTile extends StatelessWidget {
       subtitle,
       style: const TextStyle(color: _smoke, fontSize: 11),
     ),
-    trailing: const Icon(Icons.chevron_right_rounded, color: _smoke),
+    trailing: Icon(
+      Icons.chevron_right_rounded,
+      color: onTap == null ? _smoke.withValues(alpha: .45) : _smoke,
+    ),
   );
+}
+
+Future<void> _showStaffPasswordDialog(
+  BuildContext context,
+  ApiClient api,
+) async {
+  final current = TextEditingController();
+  final next = TextEditingController();
+  final confirm = TextEditingController();
+  var working = false;
+  try {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setModalState) => AlertDialog(
+          title: const Text('Change password'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: current,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: 'Current password',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: next,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: 'New password',
+                  helperText:
+                      '10+ characters with uppercase, lowercase, number and symbol',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: confirm,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: 'Confirm new password',
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: working ? null : () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: working
+                  ? null
+                  : () async {
+                      if (next.text != confirm.text) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('New passwords do not match.'),
+                          ),
+                        );
+                        return;
+                      }
+                      setModalState(() => working = true);
+                      try {
+                        await api.post(
+                          '/mobile/staff/profile/password',
+                          data: {
+                            'current_password': current.text,
+                            'password': next.text,
+                            'password_confirmation': confirm.text,
+                          },
+                        );
+                        if (dialogContext.mounted) Navigator.pop(dialogContext);
+                        if (context.mounted)
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'Password updated. Sign in again on your other devices.',
+                              ),
+                            ),
+                          );
+                      } catch (error) {
+                        if (context.mounted)
+                          _message(context, error.toString(), error: true);
+                      } finally {
+                        if (context.mounted)
+                          setModalState(() => working = false);
+                      }
+                    },
+              child: working
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Update password'),
+            ),
+          ],
+        ),
+      ),
+    );
+  } finally {
+    current.dispose();
+    next.dispose();
+    confirm.dispose();
+  }
 }
 
 /// Shared top rail taken from the Stitch “Velvet Concierge” screens. Keeping
 /// this in the page shell makes every staff workspace feel like one product.
+class ScanHistoryPage extends StatefulWidget {
+  const ScanHistoryPage({super.key, required this.api});
+  final ApiClient api;
+  @override
+  State<ScanHistoryPage> createState() => _ScanHistoryPageState();
+}
+
+class _ScanHistoryPageState extends State<ScanHistoryPage> {
+  late Future<List<Map<String, dynamic>>> _future = _load();
+  Future<List<Map<String, dynamic>>> _load() async {
+    final response = await widget.api.get('/mobile/staff/scan-history');
+    return (response['data'] as List? ?? const [])
+        .map((item) => Map<String, dynamic>.from(item as Map))
+        .toList();
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Scan history')),
+    body: FutureBuilder<List<Map<String, dynamic>>>(
+      future: _future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done)
+          return const Center(child: CircularProgressIndicator());
+        if (snapshot.hasError)
+          return Center(
+            child: FilledButton.icon(
+              onPressed: () => setState(() => _future = _load()),
+              icon: const Icon(Icons.refresh_rounded),
+              label: const Text('Retry'),
+            ),
+          );
+        final logs = snapshot.data ?? const [];
+        if (logs.isEmpty) return const Center(child: Text('No scans yet.'));
+        return RefreshIndicator(
+          onRefresh: () async => setState(() => _future = _load()),
+          child: ListView.separated(
+            padding: const EdgeInsets.all(16),
+            itemCount: logs.length,
+            separatorBuilder: (context, index) => const SizedBox(height: 8),
+            itemBuilder: (_, index) {
+              final log = logs[index];
+              final status = log['status']?.toString() ?? 'unknown';
+              final valid = status == 'valid';
+              return Card(
+                child: ListTile(
+                  leading: Icon(
+                    valid
+                        ? Icons.check_circle_rounded
+                        : Icons.error_outline_rounded,
+                    color: valid ? _success : _red,
+                  ),
+                  title: Text(
+                    log['serial']?.toString() ?? 'Serial unavailable',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontFamily: 'monospace',
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  subtitle: Text(log['scanned_at']?.toString() ?? ''),
+                  trailing: Text(
+                    status.replaceAll('_', ' ').toUpperCase(),
+                    style: TextStyle(
+                      color: valid ? _success : _red,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+      },
+    ),
+  );
+}
+
 class _StitchAppHeader extends StatelessWidget {
   const _StitchAppHeader();
 
