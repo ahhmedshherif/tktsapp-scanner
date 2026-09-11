@@ -37,6 +37,7 @@ class _ScannerAppState extends State<ScannerApp> {
   final _api = ApiClient();
   final _store = StaffSessionStore();
   StaffSession? _session;
+  Timer? _quickLoginExpiryTimer;
   bool _loading = true;
 
   @override
@@ -54,6 +55,7 @@ class _ScannerAppState extends State<ScannerApp> {
         final user = Map<String, dynamic>.from(response['data'] as Map);
         _session = StaffSession(session.token, user);
         await _store.save(_session!);
+        _scheduleQuickLoginExpiry(_session!);
       } catch (_) {
         await _store.clear();
         _api.setToken(null);
@@ -65,10 +67,12 @@ class _ScannerAppState extends State<ScannerApp> {
   Future<void> _signedIn(StaffSession session) async {
     _api.setToken(session.token);
     await _store.save(session);
+    _scheduleQuickLoginExpiry(session);
     if (mounted) setState(() => _session = session);
   }
 
   Future<void> _signOut() async {
+    _quickLoginExpiryTimer?.cancel();
     try {
       await _api.post('/mobile/staff/logout');
     } catch (_) {
@@ -77,6 +81,26 @@ class _ScannerAppState extends State<ScannerApp> {
     _api.setToken(null);
     await _store.clear();
     if (mounted) setState(() => _session = null);
+  }
+
+  void _scheduleQuickLoginExpiry(StaffSession session) {
+    _quickLoginExpiryTimer?.cancel();
+    final raw = session.user['quick_login_expires_at']?.toString();
+    if (raw == null || raw.isEmpty) return;
+    final expiresAt = DateTime.tryParse(raw)?.toLocal();
+    if (expiresAt == null) return;
+    final remaining = expiresAt.difference(DateTime.now());
+    if (remaining <= Duration.zero) {
+      unawaited(_signOut());
+      return;
+    }
+    _quickLoginExpiryTimer = Timer(remaining, () => unawaited(_signOut()));
+  }
+
+  @override
+  void dispose() {
+    _quickLoginExpiryTimer?.cancel();
+    super.dispose();
   }
 
   @override
