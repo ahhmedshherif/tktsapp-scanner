@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
 
 import 'src/core/api_client.dart';
@@ -1122,6 +1123,15 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
                             style: OutlinedButton.styleFrom(
                               minimumSize: const Size.fromHeight(50),
                               foregroundColor: _burgundy,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          _LegalFooter(
+                            onOpen: (section) => Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    LegalSupportPage(section: section),
+                              ),
                             ),
                           ),
                         ],
@@ -4286,6 +4296,258 @@ class _CreateStaffPageState extends State<CreateStaffPage> {
   );
 }
 
+enum LegalSection { overview, privacy, terms, support }
+
+class _LegalFooter extends StatelessWidget {
+  const _LegalFooter({required this.onOpen});
+  final ValueChanged<LegalSection> onOpen;
+
+  @override
+  Widget build(BuildContext context) => Wrap(
+    alignment: WrapAlignment.center,
+    spacing: 2,
+    runSpacing: 0,
+    children: [
+      TextButton(
+        onPressed: () => onOpen(LegalSection.privacy),
+        child: const Text('Privacy'),
+      ),
+      TextButton(
+        onPressed: () => onOpen(LegalSection.terms),
+        child: const Text('Staff terms'),
+      ),
+      TextButton(
+        onPressed: () => onOpen(LegalSection.support),
+        child: const Text('Support'),
+      ),
+    ],
+  );
+}
+
+class LegalSupportPage extends StatelessWidget {
+  const LegalSupportPage({super.key, this.section = LegalSection.overview});
+  final LegalSection section;
+
+  static const _privacyUrl = 'https://tktsapp.com/scanner/privacy-policy';
+  static const _termsUrl = 'https://tktsapp.com/scanner/terms-conditions';
+  static const _supportUrl = 'https://tktsapp.com/contact-us';
+
+  Future<void> _openExternal(BuildContext context, String value) async {
+    final opened = await launchUrl(
+      Uri.parse(value),
+      mode: LaunchMode.externalApplication,
+    );
+    if (!opened && context.mounted) {
+      _message(
+        context,
+        'Could not open the link. Please try again.',
+        error: true,
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final showPrivacy = section == LegalSection.privacy;
+    final showTerms = section == LegalSection.terms;
+    final showSupport = section == LegalSection.support;
+    final title = showPrivacy
+        ? 'Privacy policy'
+        : showTerms
+        ? 'Staff terms of use'
+        : showSupport
+        ? 'Support'
+        : 'Legal & support';
+    final subtitle = showPrivacy
+        ? 'How Scanner handles staff, camera and scan data.'
+        : showTerms
+        ? 'Rules for secure, authorized event operations.'
+        : showSupport
+        ? 'Get help from the TKTS APP team.'
+        : 'Everything needed to operate Scanner responsibly.';
+
+    return Scaffold(
+      appBar: AppBar(title: Text(title)),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 18, 20, 36),
+        children: [
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: _charcoal,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'TKTSAPP SCANNER',
+                  style: GoogleFonts.spaceGrotesk(
+                    color: _gold,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 11,
+                    letterSpacing: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  title,
+                  style: GoogleFonts.spaceGrotesk(
+                    color: _ivory,
+                    fontSize: 25,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  subtitle,
+                  style: const TextStyle(color: Color(0xCFF4EFE8)),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 18),
+          if (!showTerms && !showSupport) ...[
+            const _LegalCopyCard(
+              icon: Icons.visibility_outlined,
+              title: 'What Scanner processes',
+              body:
+                  'Scanner uses your staff identity, assignment scope, camera input while you scan, and validation records such as ticket identifier, result and scan time. Camera input is decoded for QR scanning; the app does not intentionally record photos, video or audio.',
+            ),
+            const _LegalCopyCard(
+              icon: Icons.lock_outline_rounded,
+              title: 'How access is protected',
+              body:
+                  'Sign-in, role and event/session access are verified by TKTS APP servers. Keep your work account, two-factor codes and temporary event-login QR confidential. Do not share a signed-in device.',
+            ),
+            const _LegalCopyCard(
+              icon: Icons.person_off_outlined,
+              title: 'Attendee privacy',
+              body:
+                  'Use only the information needed to validate entry. Do not copy QR codes, record attendee details or try to access buyer contact, payment or transfer data outside the approved workflow.',
+            ),
+            const SizedBox(height: 8),
+            _LegalLinkButton(
+              icon: Icons.open_in_new_rounded,
+              label: 'Read the complete Scanner privacy policy',
+              onPressed: () => _openExternal(context, _privacyUrl),
+            ),
+          ],
+          if (!showPrivacy && !showSupport) ...[
+            const _LegalCopyCard(
+              icon: Icons.qr_code_scanner_rounded,
+              title: 'Authorized scanning only',
+              body:
+                  'Use Scanner only for your approved organizer, event and session. Follow every server validation result and venue procedure. Never bypass duplicate, expired, used or out-of-scope results.',
+            ),
+            const _LegalCopyCard(
+              icon: Icons.gpp_good_outlined,
+              title: 'Account responsibility',
+              body:
+                  'You are responsible for activity from your assigned account or event-login QR. TKTS APP may suspend unsafe or unauthorized access to protect attendees and event operations.',
+            ),
+            const SizedBox(height: 8),
+            _LegalLinkButton(
+              icon: Icons.open_in_new_rounded,
+              label: 'Read the complete Scanner terms',
+              onPressed: () => _openExternal(context, _termsUrl),
+            ),
+          ],
+          if (!showPrivacy && !showTerms) ...[
+            const _LegalCopyCard(
+              icon: Icons.support_agent_rounded,
+              title: 'Need help?',
+              body:
+                  'For event operations, account access or privacy requests, contact the TKTS APP support team. Include your organizer, event and device details where relevant.',
+            ),
+            _LegalLinkButton(
+              icon: Icons.mail_outline_rounded,
+              label: 'Contact TKTS APP support',
+              onPressed: () => _openExternal(context, _supportUrl),
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'TKTS APP is operated by Jumpers Agency. VAT Registration No. 762634405.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: _smoke, fontSize: 12, height: 1.45),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _LegalCopyCard extends StatelessWidget {
+  const _LegalCopyCard({
+    required this.icon,
+    required this.title,
+    required this.body,
+  });
+  final IconData icon;
+  final String title;
+  final String body;
+
+  @override
+  Widget build(BuildContext context) => Card(
+    margin: const EdgeInsets.only(bottom: 12),
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: _gold.withValues(alpha: .16),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: _primary, size: 20),
+          ),
+          const SizedBox(width: 13),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 5),
+                Text(body, style: const TextStyle(color: _smoke, height: 1.45)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _LegalLinkButton extends StatelessWidget {
+  const _LegalLinkButton({
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+  });
+  final IconData icon;
+  final String label;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) => OutlinedButton.icon(
+    onPressed: onPressed,
+    icon: Icon(icon),
+    label: Text(label),
+    style: OutlinedButton.styleFrom(
+      minimumSize: const Size.fromHeight(50),
+      foregroundColor: _primary,
+      alignment: Alignment.centerLeft,
+    ),
+  );
+}
+
 class ProfilePage extends StatelessWidget {
   const ProfilePage({
     super.key,
@@ -4417,6 +4679,15 @@ class ProfilePage extends StatelessWidget {
                     MaterialPageRoute(
                       builder: (_) => ScanHistoryPage(api: api),
                     ),
+                  ),
+                ),
+                _SettingsTile(
+                  icon: Icons.policy_outlined,
+                  title: 'Legal & support',
+                  subtitle: 'Privacy, staff terms and support contacts',
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const LegalSupportPage()),
                   ),
                 ),
                 const _SettingsTile(

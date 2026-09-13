@@ -17,7 +17,7 @@
 	<key>CFBundleName</key>
 	<string>TKTSAPP Scanner</string>
 	<key>NSCameraUsageDescription</key>
-	<string>TKTSAPP Scanner uses the camera to validate event ticket QR codes.</string>
+	<string>TKTSAPP Scanner uses the camera only to validate event ticket QR codes and temporary event-login QR codes. It does not record photos or video.</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
