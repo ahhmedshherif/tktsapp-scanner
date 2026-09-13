@@ -105,6 +105,11 @@ class _ScannerAppState extends State<ScannerApp> {
 
   @override
   Widget build(BuildContext context) => MaterialApp(
+    // A QR login originates on a pushed camera route. Re-keying the app when
+    // the session changes resets that route stack, so the newly-authorized
+    // scanner reaches its workspace immediately rather than remaining on the
+    // black "Signing in securely" camera screen until a relaunch.
+    key: ValueKey('scanner-session-${_session?.token ?? 'guest'}'),
     title: 'TKTSAPP Scanner',
     debugShowCheckedModeBanner: false,
     theme: _theme(),
@@ -1174,6 +1179,12 @@ class _QuickScannerLoginPageState extends State<QuickScannerLoginPage> {
       await widget.onSignedIn(
         StaffSession(token, Map<String, dynamic>.from(response['user'] as Map)),
       );
+      // The app shell is re-keyed after onSignedIn. This is a defensive
+      // fallback for older Flutter navigators that keep the pushed camera
+      // route alive for one extra frame.
+      if (mounted) {
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      }
     } on ApiFailure catch (error) {
       if (mounted) _message(context, error.message, error: true);
       await _camera.start();
