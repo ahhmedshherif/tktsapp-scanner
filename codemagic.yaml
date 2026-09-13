@@ -28,6 +28,10 @@ workflows:
   ios-release:
     name: TKTSAPP Scanner iOS
     max_build_duration: 60
+    # This key is stored only in Codemagic's Apple Developer Portal integration.
+    # It has App Manager access and is never present in the repository.
+    integrations:
+      app_store_connect: TKTS Apple Portal
     environment:
       flutter: stable
       xcode: latest
@@ -52,7 +56,14 @@ workflows:
       - name: Apply Codemagic App Store signing profile
         script: xcode-project use-profiles
       - name: Build IPA
-        script: flutter build ipa --release --export-options-plist=/Users/builder/export_options.plist --dart-define=API_BASE_URL=$API_BASE_URL --dart-define=ONESIGNAL_APP_ID=$ONESIGNAL_APP_ID
+        script: flutter build ipa --release --build-number=$BUILD_NUMBER --export-options-plist=/Users/builder/export_options.plist --dart-define=API_BASE_URL=$API_BASE_URL --dart-define=ONESIGNAL_APP_ID=$ONESIGNAL_APP_ID
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
+    publishing:
+      app_store_connect:
+        auth: integration
+        # Upload every signed build to TestFlight. App Store review remains a
+        # separate deliberate action after Apple metadata/screenshots are ready.
+        submit_to_testflight: true
+        submit_to_app_store: false
