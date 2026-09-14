@@ -2775,20 +2775,26 @@ class _ScannerPageState extends State<ScannerPage> {
       _device = null;
       return;
     }
-    final response = await widget.api.get(
-      '/mobile/staff/events/${_event!['id']}/scanners',
-    );
-    _devices = (response['data'] as List? ?? const [])
-        .where(
-          (item) =>
-              item['active'] == true &&
-              (_session == null ||
-                  item['event_session_id']?.toString() ==
-                      _session!['id']?.toString()),
-        )
-        .map((item) => Map<String, dynamic>.from(item as Map))
-        .toList();
-    _device = _devices.isEmpty ? null : _devices.first;
+    try {
+      final response = await widget.api.get(
+        '/mobile/staff/events/${_event!['id']}/scanners',
+      );
+      _devices = (response['data'] as List? ?? const [])
+          .where(
+            (item) =>
+                item['active'] == true &&
+                (_session == null ||
+                    item['event_session_id']?.toString() ==
+                        _session!['id']?.toString()),
+          )
+          .map((item) => Map<String, dynamic>.from(item as Map))
+          .toList();
+      _device = _devices.isEmpty ? null : _devices.first;
+    } on ApiFailure catch (error) {
+      _devices = const [];
+      _device = null;
+      if (mounted) _message(context, error.message, error: true);
+    }
   }
 
   Future<void> _chooseEvent(Map<String, dynamic>? value) async {
