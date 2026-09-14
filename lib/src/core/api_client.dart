@@ -48,7 +48,9 @@ class ApiClient {
         ? '/api/v1'
         : '$path/api/v1';
 
-    return parsed.replace(path: apiPath, query: null, fragment: null).toString();
+    return parsed
+        .replace(path: apiPath, query: null, fragment: null)
+        .toString();
   }
 
   void setToken(String? token) => _token = token;
@@ -57,6 +59,8 @@ class ApiClient {
       _request('POST', path, data: data);
   Future<Map<String, dynamic>> patch(String path, {Object? data}) =>
       _request('PATCH', path, data: data);
+  Future<Map<String, dynamic>> delete(String path, {Object? data}) =>
+      _request('DELETE', path, data: data);
 
   Future<Map<String, dynamic>> _request(
     String method,

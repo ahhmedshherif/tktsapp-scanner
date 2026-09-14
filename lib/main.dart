@@ -4704,6 +4704,18 @@ class ProfilePage extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 22),
+          OutlinedButton.icon(
+            onPressed: () =>
+                _showStaffAccountDeletionDialog(context, api, onSignOut),
+            icon: const Icon(Icons.delete_forever_outlined),
+            label: const Text('Delete my account'),
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size.fromHeight(52),
+              foregroundColor: _red,
+              side: const BorderSide(color: _red),
+            ),
+          ),
+          const SizedBox(height: 10),
           FilledButton.icon(
             onPressed: onSignOut,
             icon: const Icon(Icons.logout_rounded),
@@ -4717,6 +4729,106 @@ class ProfilePage extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+Future<void> _showStaffAccountDeletionDialog(
+  BuildContext context,
+  ApiClient api,
+  Future<void> Function() onSignOut,
+) async {
+  final currentPassword = TextEditingController();
+  final confirmation = TextEditingController();
+  var working = false;
+  try {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setModalState) => AlertDialog(
+          icon: const Icon(Icons.warning_amber_rounded, color: _red),
+          title: const Text('Delete account?'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'This permanently removes your staff access, profile details and active sessions. This cannot be undone.',
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: currentPassword,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: 'Current password',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: confirmation,
+                textCapitalization: TextCapitalization.characters,
+                decoration: const InputDecoration(
+                  labelText: 'Type DELETE to confirm',
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: working ? null : () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: working
+                  ? null
+                  : () async {
+                      if (confirmation.text.trim() != 'DELETE') {
+                        _message(
+                          context,
+                          'Type DELETE to confirm.',
+                          error: true,
+                        );
+                        return;
+                      }
+                      setModalState(() => working = true);
+                      try {
+                        await api.delete(
+                          '/mobile/staff/profile',
+                          data: {
+                            'current_password': currentPassword.text,
+                            'confirmation': 'DELETE',
+                          },
+                        );
+                        if (dialogContext.mounted) Navigator.pop(dialogContext);
+                        if (context.mounted) {
+                          _message(
+                            context,
+                            'Account deleted. You have been signed out.',
+                          );
+                        }
+                        await onSignOut();
+                      } catch (error) {
+                        if (context.mounted)
+                          _message(context, error.toString(), error: true);
+                      } finally {
+                        if (context.mounted)
+                          setModalState(() => working = false);
+                      }
+                    },
+              style: FilledButton.styleFrom(backgroundColor: _red),
+              child: working
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Delete account'),
+            ),
+          ],
+        ),
+      ),
+    );
+  } finally {
+    currentPassword.dispose();
+    confirmation.dispose();
   }
 }
 
