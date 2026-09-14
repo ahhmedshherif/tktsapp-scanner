@@ -3181,25 +3181,37 @@ class _ScannerPageState extends State<ScannerPage> {
                 },
               ),
               const SizedBox(height: 16),
-              const Divider(height: 1),
-              const SizedBox(height: 12),
-              const Text(
-                'Admission flow',
-                style: TextStyle(fontWeight: FontWeight.w700),
-              ),
-              SwitchListTile(
-                title: const Text('Auto-admit valid tickets'),
-                subtitle: const Text(
-                  'If off, you must manually confirm entry.',
+              if (_action == 'validate') ...[
+                const Divider(height: 1),
+                const SizedBox(height: 12),
+                const _ScannerInfoNote(
+                  icon: Icons.verified_outlined,
+                  message:
+                      'Check only never records entry or exit. It only verifies access for this selected session.',
                 ),
-                value: _autoAdmit,
-                activeThumbColor: _burgundy,
-                contentPadding: EdgeInsets.zero,
-                onChanged: (val) {
-                  setState(() => _autoAdmit = val);
-                  setSheetState(() {});
-                },
-              ),
+              ] else ...[
+                const Divider(height: 1),
+                const SizedBox(height: 12),
+                const Text(
+                  'Admission flow',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+                SwitchListTile(
+                  title: const Text('Auto-admit valid tickets'),
+                  subtitle: Text(
+                    _action == 'checkout'
+                        ? 'If off, you must manually confirm exit.'
+                        : 'If off, you must manually confirm entry.',
+                  ),
+                  value: _autoAdmit,
+                  activeThumbColor: _burgundy,
+                  contentPadding: EdgeInsets.zero,
+                  onChanged: (val) {
+                    setState(() => _autoAdmit = val);
+                    setSheetState(() {});
+                  },
+                ),
+              ],
               const SizedBox(height: 8),
               const Text(
                 'Hardware',
@@ -3566,6 +3578,39 @@ class _ScannerPageState extends State<ScannerPage> {
             ],
           ),
   );
+}
+
+class _ScannerInfoNote extends StatelessWidget {
+  const _ScannerInfoNote({required this.icon, required this.message});
+
+  final IconData icon;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: _ivory.withValues(alpha: 0.7),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _gold.withValues(alpha: 0.45)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: _burgundy),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(fontSize: 12, height: 1.35),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _ScannerSetupSummary extends StatelessWidget {
