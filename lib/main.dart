@@ -2701,7 +2701,7 @@ class _ScannerPageState extends State<ScannerPage> {
   Map<String, dynamic>? _session;
   Map<String, dynamic>? _fallbackSession;
   Map<String, dynamic>? _device;
-  String _action = 'checkin';
+  String _action = 'smart';
   bool _autoAdmit = true;
   bool _useCamera = true;
   bool _loading = true;
@@ -3146,6 +3146,11 @@ class _ScannerPageState extends State<ScannerPage> {
               const SizedBox(height: 8),
               SegmentedButton<String>(
                 segments: const [
+                  ButtonSegment(
+                    value: 'smart',
+                    icon: Icon(Icons.sync_rounded),
+                    label: Text('Smart'),
+                  ),
                   ButtonSegment(
                     value: 'checkin',
                     icon: Icon(Icons.login_rounded),
@@ -3628,7 +3633,9 @@ class _ScannerSetupSummary extends StatelessWidget {
               _setupRow(
                 Icons.fact_check_outlined,
                 'Validation Mode',
-                action == 'checkin'
+                action == 'smart'
+                    ? 'Smart — switches between entry and exit automatically'
+                    : action == 'checkin'
                     ? 'Entry — validate and admit'
                     : action == 'checkout'
                     ? 'Exit — release capacity'
@@ -3777,7 +3784,9 @@ class _ScannerStatus extends StatelessWidget {
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    action == 'checkin'
+                    action == 'smart'
+                        ? 'SMART'
+                        : action == 'checkin'
                         ? 'ENTRY'
                         : action == 'checkout'
                         ? 'EXIT'
