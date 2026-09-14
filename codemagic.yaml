@@ -63,7 +63,8 @@ workflows:
     publishing:
       app_store_connect:
         auth: integration
-        # Upload every signed build to TestFlight. App Store review remains a
-        # separate deliberate action after Apple metadata/screenshots are ready.
-        submit_to_testflight: true
+        # Upload the IPA to App Store Connect, but do not automatically submit
+        # it to external TestFlight beta review. Internal testers can use the
+        # processed build immediately; external review remains deliberate.
+        submit_to_testflight: false
         submit_to_app_store: false
