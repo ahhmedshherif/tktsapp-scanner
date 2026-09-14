@@ -2726,7 +2726,7 @@ class _ScannerPageState extends State<ScannerPage> {
           ];
   }
 
-  // Station is resolved automatically for the selected event/session.
+  // A gate is resolved automatically for the selected event/session.
   bool get _canStart => _event != null && _session != null;
 
   String _eventValue(Map<String, dynamic> event) => event['id'].toString();
@@ -2777,7 +2777,7 @@ class _ScannerPageState extends State<ScannerPage> {
     }
     try {
       final response = await widget.api.get(
-        '/mobile/staff/events/${_event!['id']}/scanners',
+        '/mobile/staff/events/${_event!['id']}/gates',
       );
       _devices = (response['data'] as List? ?? const [])
           .where(
@@ -2835,7 +2835,7 @@ class _ScannerPageState extends State<ScannerPage> {
         if (mounted) {
           _message(
             context,
-            'No active scanner station is assigned to this session.',
+            'Choose an active gate before scanning.',
             error: true,
           );
         }
@@ -2869,13 +2869,16 @@ class _ScannerPageState extends State<ScannerPage> {
     if (_event == null || _session == null) return;
     try {
       await widget.api.post(
-        '/mobile/staff/events/${_event!['id']}/scanners',
-        data: {'label': 'TKTSAPP Scanner', 'event_session_id': _session!['id']},
+        '/mobile/staff/events/${_event!['id']}/gates',
+        data: {
+          'label': 'Gate ${_devices.length + 1}',
+          'event_session_id': _session!['id'],
+        },
       );
       await _loadDevices();
       if (mounted) {
         setState(() {});
-        _message(context, 'Scanner station is ready for this event.');
+        _message(context, 'Gate is ready for this session.');
       }
     } on ApiFailure catch (error) {
       if (mounted) _message(context, error.message, error: true);
@@ -3087,19 +3090,18 @@ class _ScannerPageState extends State<ScannerPage> {
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
-                key: ValueKey(
-                  'scan-station-${_event?['id']}-${_device?['id']}',
-                ),
+                key: ValueKey('scan-gate-${_event?['id']}-${_device?['id']}'),
                 initialValue: _device == null ? null : _stationValue(_device!),
                 isExpanded: true,
-                decoration: const InputDecoration(labelText: 'Scanner station'),
+                decoration: const InputDecoration(labelText: 'Gate'),
                 items: _devices
                     .map(
                       (device) => DropdownMenuItem<String>(
                         value: _stationValue(device),
                         child: Text(
-                          device['label']?.toString() ??
-                              'Scanner ${device['id']}',
+                          device['gate_name']?.toString() ??
+                              device['label']?.toString() ??
+                              'Gate ${device['id']}',
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
@@ -3119,7 +3121,7 @@ class _ScannerPageState extends State<ScannerPage> {
               if (_device == null && _event != null) ...[
                 const SizedBox(height: 8),
                 const Text(
-                  'No active station exists for this event.',
+                  'No active gate exists for this session.',
                   style: TextStyle(fontSize: 12, color: _red),
                 ),
                 if (widget.session.isAdmin ||
@@ -3132,7 +3134,7 @@ class _ScannerPageState extends State<ScannerPage> {
                         await _createStation();
                         setSheetState(() {});
                       },
-                      child: const Text('Create station'),
+                      child: const Text('Create gate'),
                     ),
                   ),
               ],
