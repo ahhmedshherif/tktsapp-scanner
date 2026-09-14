@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:audioplayers/audioplayers.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -2701,12 +2702,15 @@ class _ScannerPageState extends State<ScannerPage> {
   Map<String, dynamic>? _session;
   Map<String, dynamic>? _fallbackSession;
   Map<String, dynamic>? _device;
-  String _action = 'smart';
+  // Explicit terminal modes keep staff accountable for every movement. Smart
+  // toggling can create a wrong entry/exit decision at a busy gate.
+  String _action = 'checkin';
   bool _autoAdmit = true;
   bool _useCamera = true;
   bool _loading = true;
   bool _processing = false;
   bool _isScanning = false;
+  late final AudioPlayer _feedbackPlayer;
 
   List<Map<String, dynamic>> get _sessions {
     final raw = _event?['sessions'];
@@ -2740,11 +2744,13 @@ class _ScannerPageState extends State<ScannerPage> {
   @override
   void initState() {
     super.initState();
+    _feedbackPlayer = AudioPlayer(playerId: 'scanner-feedback');
     _loadEvents();
   }
 
   @override
   void dispose() {
+    _feedbackPlayer.dispose();
     _camera.dispose();
     _hardwareFocusNode.dispose();
     _hardwareController.dispose();
@@ -2904,7 +2910,8 @@ class _ScannerPageState extends State<ScannerPage> {
     setState(() => _processing = true);
     if (_useCamera && _isScanning) await _camera.stop();
 
-    // If auto-admit is off, the first scan is always just 'validate'.
+    // Manual mode does an action-aware, server-side preview. The commit is
+    // performed only after the staff member confirms the result.
     final apiAction = (isInitial && !_autoAdmit && currentAction != 'validate')
         ? 'validate'
         : currentAction;
@@ -2915,6 +2922,7 @@ class _ScannerPageState extends State<ScannerPage> {
         data: {
           'scanner_device_id': _device!['id'],
           'action': apiAction,
+          if (apiAction == 'validate') 'requested_action': currentAction,
           'qr_raw': value,
           'idempotency_key': const Uuid().v4(),
         },
@@ -2927,13 +2935,13 @@ class _ScannerPageState extends State<ScannerPage> {
       final isValid = result['status'] == 'valid';
       await _scanFeedback(success: isValid);
       if (isInitial && !_autoAdmit && currentAction != 'validate' && isValid) {
-        await _showResult(
+        final shouldCommit = await _showResult(
           result,
-          onAdmit: () async {
-            Navigator.pop(context); // Close the validate sheet
-            await _processScan(value, currentAction, isInitial: false);
-          },
+          confirmationAction: currentAction,
         );
+        if (shouldCommit && mounted) {
+          await _processScan(value, currentAction, isInitial: false);
+        }
       } else {
         await _showResult(result);
       }
@@ -2949,6 +2957,10 @@ class _ScannerPageState extends State<ScannerPage> {
   }
 
   Future<void> _scanFeedback({required bool success}) async {
+    await _feedbackPlayer.stop();
+    await _feedbackPlayer.play(
+      AssetSource(success ? 'audio/scan_success.mp3' : 'audio/scan_error.mp3'),
+    );
     if (success) {
       await Future.wait<void>([
         SystemSound.play(SystemSoundType.click),
@@ -2963,15 +2975,15 @@ class _ScannerPageState extends State<ScannerPage> {
     ]);
   }
 
-  Future<void> _showResult(
+  Future<bool> _showResult(
     Map<String, dynamic> result, {
-    Future<void> Function()? onAdmit,
-  }) => showModalBottomSheet<void>(
+    String? confirmationAction,
+  }) => showModalBottomSheet<bool>(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
-    isDismissible: onAdmit == null,
-    enableDrag: onAdmit == null,
+    isDismissible: confirmationAction == null,
+    enableDrag: confirmationAction == null,
     builder: (context) {
       final valid = result['status'] == 'valid';
       final ticket = Map<String, dynamic>.from(
@@ -2981,10 +2993,10 @@ class _ScannerPageState extends State<ScannerPage> {
         valid: valid,
         result: result,
         ticket: ticket,
-        onAdmit: onAdmit,
+        confirmationAction: confirmationAction,
       );
     },
-  );
+  ).then((value) => value == true);
 
   Future<void> _openSettings() => showModalBottomSheet<void>(
     context: context,
@@ -3146,11 +3158,6 @@ class _ScannerPageState extends State<ScannerPage> {
               const SizedBox(height: 8),
               SegmentedButton<String>(
                 segments: const [
-                  ButtonSegment(
-                    value: 'smart',
-                    icon: Icon(Icons.sync_rounded),
-                    label: Text('Smart'),
-                  ),
                   ButtonSegment(
                     value: 'checkin',
                     icon: Icon(Icons.login_rounded),
@@ -3784,9 +3791,7 @@ class _ScannerStatus extends StatelessWidget {
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    action == 'smart'
-                        ? 'SMART'
-                        : action == 'checkin'
+                    action == 'checkin'
                         ? 'ENTRY'
                         : action == 'checkout'
                         ? 'EXIT'
@@ -3809,144 +3814,163 @@ class _ScanResultSheet extends StatelessWidget {
     required this.valid,
     required this.result,
     required this.ticket,
-    this.onAdmit,
+    this.confirmationAction,
   });
   final bool valid;
   final Map<String, dynamic> result;
   final Map<String, dynamic> ticket;
-  final Future<void> Function()? onAdmit;
+  final String? confirmationAction;
 
   @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.fromLTRB(24, 16, 24, 34),
-    decoration: BoxDecoration(
-      color: _ivory,
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-      boxShadow: const [
-        BoxShadow(
-          color: Color(0x1F4A0519),
-          blurRadius: 30,
-          offset: Offset(0, -4),
-        ),
-      ],
-      border: Border(top: BorderSide(color: valid ? _green : _red, width: 4)),
-    ),
-    child: SafeArea(
-      top: false,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 40,
-            height: 4,
-            margin: const EdgeInsets.only(bottom: 24),
-            decoration: BoxDecoration(
-              color: _smoke.withValues(alpha: 0.3),
-              borderRadius: BorderRadius.circular(2),
-            ),
+  Widget build(BuildContext context) {
+    final completedAction = result['scan_type']?.toString();
+    final heading = valid
+        ? completedAction == 'exit'
+              ? 'Exit recorded'
+              : completedAction == 'entry'
+              ? 'Entry recorded'
+              : 'Ticket valid'
+        : result['message']?.toString() ?? 'Access denied';
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 34),
+      decoration: BoxDecoration(
+        color: _ivory,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x1F4A0519),
+            blurRadius: 30,
+            offset: Offset(0, -4),
           ),
-          AnimatedScale(
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeOutBack,
-            scale: 1.0,
-            child: Container(
-              width: 72,
-              height: 72,
+        ],
+        border: Border(top: BorderSide(color: valid ? _green : _red, width: 4)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 24),
               decoration: BoxDecoration(
-                color: valid
-                    ? _green.withValues(alpha: 0.1)
-                    : _red.withValues(alpha: 0.1),
-                shape: BoxShape.circle,
+                color: _smoke.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(2),
               ),
-              child: Icon(
-                valid ? Icons.check_circle_rounded : Icons.cancel_rounded,
-                size: 48,
+            ),
+            AnimatedScale(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOutBack,
+              scale: 1.0,
+              child: Container(
+                width: 72,
+                height: 72,
+                decoration: BoxDecoration(
+                  color: valid
+                      ? _green.withValues(alpha: 0.1)
+                      : _red.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  valid ? Icons.check_circle_rounded : Icons.cancel_rounded,
+                  size: 48,
+                  color: valid ? _green : _red,
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              heading,
+              textAlign: TextAlign.center,
+              style: GoogleFonts.spaceGrotesk(
+                fontSize: 26,
+                fontWeight: FontWeight.w700,
                 color: valid ? _green : _red,
               ),
             ),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            result['message']?.toString() ??
-                (valid ? 'Access Granted' : 'Access Denied'),
-            textAlign: TextAlign.center,
-            style: GoogleFonts.spaceGrotesk(
-              fontSize: 26,
-              fontWeight: FontWeight.w700,
-              color: valid ? _green : _red,
-            ),
-          ),
-          const SizedBox(height: 24),
-          if (ticket.isNotEmpty) ...[
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: const Color(0xFFEADFC9), width: 1),
-              ),
-              child: Column(
-                children: [
-                  _ResultLine(
-                    'Holder',
-                    ticket['recipient_name']?.toString() ?? 'Ticket holder',
-                  ),
-                  const Divider(height: 16, color: Color(0xFFEADFC9)),
-                  _ResultLine(
-                    'Ticket',
-                    ticket['ticket_type']?['name']?.toString() ?? 'Ticket',
-                  ),
-                  const Divider(height: 16, color: Color(0xFFEADFC9)),
-                  _ResultLine(
-                    'Gate',
-                    ticket['ticket_type']?['gate_label']?.toString() ??
-                        'Gate TBA',
-                  ),
-                  if (ticket['session'] != null) ...[
+            const SizedBox(height: 24),
+            if (ticket.isNotEmpty) ...[
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFFEADFC9), width: 1),
+                ),
+                child: Column(
+                  children: [
+                    _ResultLine(
+                      'Holder',
+                      ticket['recipient_name']?.toString() ?? 'Ticket holder',
+                    ),
                     const Divider(height: 16, color: Color(0xFFEADFC9)),
                     _ResultLine(
-                      'Session',
-                      ticket['session']?['name']?.toString() ?? 'Session',
+                      'Ticket',
+                      ticket['ticket_type']?['name']?.toString() ?? 'Ticket',
                     ),
-                  ],
-                  if (ticket['seat_label'] != null) ...[
                     const Divider(height: 16, color: Color(0xFFEADFC9)),
-                    _ResultLine('Seat', ticket['seat_label'].toString()),
+                    _ResultLine(
+                      'Gate',
+                      ticket['ticket_type']?['gate_label']?.toString() ??
+                          'Gate TBA',
+                    ),
+                    if (completedAction == 'entry' ||
+                        completedAction == 'exit') ...[
+                      const Divider(height: 16, color: Color(0xFFEADFC9)),
+                      _ResultLine(
+                        'Movement',
+                        completedAction == 'exit' ? 'Exit' : 'Entry',
+                      ),
+                    ],
+                    if (ticket['session'] != null) ...[
+                      const Divider(height: 16, color: Color(0xFFEADFC9)),
+                      _ResultLine(
+                        'Session',
+                        ticket['session']?['name']?.toString() ?? 'Session',
+                      ),
+                    ],
+                    if (ticket['seat_label'] != null) ...[
+                      const Divider(height: 16, color: Color(0xFFEADFC9)),
+                      _ResultLine('Seat', ticket['seat_label'].toString()),
+                    ],
                   ],
-                ],
+                ),
               ),
-            ),
-          ],
-          if (onAdmit != null) ...[
-            const SizedBox(height: 24),
-            FilledButton(
-              style: FilledButton.styleFrom(backgroundColor: _green),
-              onPressed: () {
-                Navigator.pop(context);
-                onAdmit!();
-              },
-              child: const Text('ADMIT GUEST'),
-            ),
-            const SizedBox(height: 12),
-            OutlinedButton(
-              style: OutlinedButton.styleFrom(
-                foregroundColor: _smoke,
-                side: const BorderSide(color: _smoke, width: 1),
+            ],
+            if (confirmationAction != null) ...[
+              const SizedBox(height: 24),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: _green),
+                onPressed: () => Navigator.pop(context, true),
+                child: Text(
+                  confirmationAction == 'checkout'
+                      ? 'CONFIRM EXIT'
+                      : 'CONFIRM ENTRY',
+                ),
               ),
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel & Close'),
-            ),
-          ] else ...[
-            const SizedBox(height: 24),
-            FilledButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('CONTINUE SCANNING'),
-            ),
+              const SizedBox(height: 12),
+              OutlinedButton(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: _smoke,
+                  side: const BorderSide(color: _smoke, width: 1),
+                ),
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('CANCEL'),
+              ),
+            ] else ...[
+              const SizedBox(height: 24),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('CONTINUE SCANNING'),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 class _ResultLine extends StatelessWidget {
