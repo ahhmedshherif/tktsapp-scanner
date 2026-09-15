@@ -6,6 +6,7 @@ workflows:
       flutter: stable
       groups:
         - tktsapp_public
+        - tktsapp_android_signing
     scripts:
       - name: Prepare Flutter toolchain
         script: flutter config --no-enable-swift-package-manager
@@ -13,16 +14,24 @@ workflows:
         script: flutter clean
       - name: Get Flutter packages
         script: flutter pub get
+      - name: Configure Android upload signing
+        script: |
+          test -n "$CM_KEYSTORE" && test -n "$CM_KEY_ALIAS" && test -n "$CM_KEY_PASSWORD" && test -n "$CM_KEYSTORE_PASSWORD"
+          echo "$CM_KEYSTORE" | base64 --decode > android/app/upload-keystore.jks
+          cat > android/key.properties <<EOF
+          storePassword=$CM_KEYSTORE_PASSWORD
+          keyPassword=$CM_KEY_PASSWORD
+          keyAlias=$CM_KEY_ALIAS
+          storeFile=upload-keystore.jks
+          EOF
       - name: Analyze
         script: flutter analyze
       - name: Run tests
         script: flutter test
       - name: Build APK and app bundle
         script: |
-          flutter build apk --release --dart-define=API_BASE_URL=$API_BASE_URL --dart-define=ONESIGNAL_APP_ID=$ONESIGNAL_APP_ID
           flutter build appbundle --release --dart-define=API_BASE_URL=$API_BASE_URL --dart-define=ONESIGNAL_APP_ID=$ONESIGNAL_APP_ID
     artifacts:
-      - build/app/outputs/flutter-apk/app-release.apk
       - build/app/outputs/bundle/release/app-release.aab
 
   ios-release:
