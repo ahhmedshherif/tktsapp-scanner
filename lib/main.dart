@@ -919,7 +919,14 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
         await Navigator.of(context).push(
           MaterialPageRoute(
             builder: (_) => PendingReviewScreen(
+              api: widget.api,
+              login: _email.text.trim(),
+              password: _password.text,
               organizationName: response['organization_name']?.toString(),
+              onApplicationDeleted: () {
+                _email.clear();
+                _password.clear();
+              },
             ),
           ),
         );
@@ -1740,9 +1747,67 @@ class _PendingOrganizerApplication extends StatelessWidget {
   );
 }
 
-class PendingReviewScreen extends StatelessWidget {
-  const PendingReviewScreen({super.key, this.organizationName});
+class PendingReviewScreen extends StatefulWidget {
+  const PendingReviewScreen({
+    super.key,
+    required this.api,
+    required this.login,
+    required this.password,
+    required this.onApplicationDeleted,
+    this.organizationName,
+  });
+  final ApiClient api;
+  final String login;
+  final String password;
+  final VoidCallback onApplicationDeleted;
   final String? organizationName;
+
+  @override
+  State<PendingReviewScreen> createState() => _PendingReviewScreenState();
+}
+
+class _PendingReviewScreenState extends State<PendingReviewScreen> {
+  bool _deleting = false;
+
+  Future<void> _deleteApplication() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete application?'),
+        content: const Text(
+          'This permanently removes your pending organizer application. You can apply again later.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Keep application'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _deleting = true);
+    try {
+      await widget.api.delete(
+        '/mobile/auth/organizer-applications',
+        data: {'login': widget.login, 'password': widget.password},
+      );
+      if (!mounted) return;
+      widget.onApplicationDeleted();
+      _message(context, 'Your application was deleted. You can apply again anytime.');
+      Navigator.of(context).pop();
+    } on ApiFailure catch (error) {
+      if (mounted) _message(context, error.message, error: true);
+    } finally {
+      if (mounted) setState(() => _deleting = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -1782,9 +1847,9 @@ class PendingReviewScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  organizationName == null || organizationName!.isEmpty
+                  widget.organizationName == null || widget.organizationName!.isEmpty
                       ? 'Your organizer workspace request is awaiting platform approval.'
-                      : '$organizationName is awaiting platform approval.',
+                      : '${widget.organizationName} is awaiting platform approval.',
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 10),
@@ -1796,7 +1861,20 @@ class PendingReviewScreen extends StatelessWidget {
                 const SizedBox(height: 24),
                 FilledButton(
                   onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Back to sign in'),
+                  child: const Text('Sign out'),
+                ),
+                const SizedBox(height: 10),
+                TextButton.icon(
+                  onPressed: _deleting ? null : _deleteApplication,
+                  icon: _deleting
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.delete_outline_rounded),
+                  label: Text(_deleting ? 'Deleting…' : 'Delete application'),
+                  style: TextButton.styleFrom(foregroundColor: Colors.red.shade700),
                 ),
               ],
             ),
