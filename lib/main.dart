@@ -915,6 +915,16 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
         },
       );
       if (!mounted) return;
+      if (response['pending_approval'] == true) {
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => PendingReviewScreen(
+              organizationName: response['organization_name']?.toString(),
+            ),
+          ),
+        );
+        return;
+      }
       if (response['requires_two_factor'] == true) {
         await Navigator.of(context).push(
           MaterialPageRoute(
@@ -1726,6 +1736,73 @@ class _PendingOrganizerApplication extends StatelessWidget {
         const SizedBox(height: 24),
         FilledButton(onPressed: onDone, child: const Text('Back to sign in')),
       ],
+    ),
+  );
+}
+
+class PendingReviewScreen extends StatelessWidget {
+  const PendingReviewScreen({super.key, this.organizationName});
+  final String? organizationName;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    backgroundColor: _ivory,
+    appBar: AppBar(backgroundColor: _ivory, foregroundColor: _charcoal),
+    body: SafeArea(
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(28),
+          child: Container(
+            width: 500,
+            padding: const EdgeInsets.all(28),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const CircleAvatar(
+                  radius: 36,
+                  backgroundColor: Color(0xFFFFEAC2),
+                  child: Icon(
+                    Icons.hourglass_top_rounded,
+                    color: _burgundy,
+                    size: 36,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  'Account pending review',
+                  style: GoogleFonts.spaceGrotesk(
+                    fontSize: 25,
+                    fontWeight: FontWeight.w800,
+                    color: _charcoal,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  organizationName == null || organizationName!.isEmpty
+                      ? 'Your organizer workspace request is awaiting platform approval.'
+                      : '$organizationName is awaiting platform approval.',
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  'You will be able to use events, team tools, and ticket scanning immediately after approval.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: _smoke),
+                ),
+                const SizedBox(height: 24),
+                FilledButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Back to sign in'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     ),
   );
 }
