@@ -1126,6 +1126,40 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
                               foregroundColor: _burgundy,
                             ),
                           ),
+                          const SizedBox(height: 10),
+                          FilledButton.tonalIcon(
+                            onPressed: _working
+                                ? null
+                                : () => Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          const DemoWorkspaceScreen(),
+                                    ),
+                                  ),
+                            icon: const Icon(Icons.play_circle_outline_rounded),
+                            label: const Text('Try the scanner demo'),
+                            style: FilledButton.styleFrom(
+                              minimumSize: const Size.fromHeight(50),
+                              foregroundColor: _burgundy,
+                              backgroundColor: _gold.withValues(alpha: .18),
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          TextButton(
+                            onPressed: _working
+                                ? null
+                                : () => Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          OrganizerApplicationScreen(
+                                            api: widget.api,
+                                          ),
+                                    ),
+                                  ),
+                            child: const Text(
+                              'New organizer? Apply for a workspace',
+                            ),
+                          ),
                           const SizedBox(height: 12),
                           _LegalFooter(
                             onOpen: (section) => Navigator.of(context).push(
@@ -1146,6 +1180,551 @@ class _StaffLoginScreenState extends State<StaffLoginScreen> {
             ),
           ),
         ),
+      ],
+    ),
+  );
+}
+
+/// Public, data-isolated product tour. It never calls production scan APIs
+/// and cannot validate, consume, or expose a real ticket.
+class DemoWorkspaceScreen extends StatelessWidget {
+  const DemoWorkspaceScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    backgroundColor: _ivory,
+    appBar: AppBar(
+      backgroundColor: _ivory,
+      foregroundColor: _charcoal,
+      title: const Text('TKTSAPP Scanner demo'),
+    ),
+    body: SafeArea(
+      child: ListView(
+        padding: const EdgeInsets.all(24),
+        children: [
+          Text(
+            'Run a real-world check-in flow.',
+            style: GoogleFonts.spaceGrotesk(
+              color: _charcoal,
+              fontSize: 30,
+              height: 1.05,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            'This safe demo lets any organizer explore event selection, gates, QR scanning, and ticket outcomes. No production ticket or attendee data is used.',
+          ),
+          const SizedBox(height: 28),
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: _charcoal,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'DEMO EVENT',
+                  style: TextStyle(
+                    color: _gold,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.8,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  'TKTSAPP Venue Preview',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Tonight · Main Entrance · General Admission',
+                  style: TextStyle(color: Colors.white.withValues(alpha: .72)),
+                ),
+                const SizedBox(height: 18),
+                Row(
+                  children: [
+                    _DemoMetric(label: 'Capacity', value: '500'),
+                    const SizedBox(width: 20),
+                    _DemoMetric(label: 'Checked in', value: '184'),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+          ListTile(
+            contentPadding: const EdgeInsets.all(16),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(color: _burgundy.withValues(alpha: .12)),
+            ),
+            leading: const CircleAvatar(
+              backgroundColor: Color(0xFFF5EADD),
+              child: Icon(Icons.sensor_door_outlined, color: _burgundy),
+            ),
+            title: const Text('Main Entrance'),
+            subtitle: const Text('Entry validation · Live demo'),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const DemoScanScreen())),
+          ),
+          const SizedBox(height: 24),
+          const Text(
+            'How it works',
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 17),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Create an organizer workspace request when you are ready. Platform review protects real events and gives your owner account access to your organization.',
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _DemoMetric extends StatelessWidget {
+  const _DemoMetric({required this.label, required this.value});
+  final String label;
+  final String value;
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        value,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 22,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+      Text(
+        label,
+        style: TextStyle(
+          color: Colors.white.withValues(alpha: .58),
+          fontSize: 12,
+        ),
+      ),
+    ],
+  );
+}
+
+class DemoScanScreen extends StatefulWidget {
+  const DemoScanScreen({super.key});
+  @override
+  State<DemoScanScreen> createState() => _DemoScanScreenState();
+}
+
+class _DemoScanScreenState extends State<DemoScanScreen> {
+  final _camera = MobileScannerController(
+    formats: const [BarcodeFormat.qrCode],
+    detectionSpeed: DetectionSpeed.noDuplicates,
+  );
+  String? _result;
+  bool _valid = true;
+
+  void _showResult({
+    required bool valid,
+    required String title,
+    required String message,
+  }) {
+    _camera.stop();
+    setState(() {
+      _valid = valid;
+      _result = '$title\n$message';
+    });
+    HapticFeedback.mediumImpact();
+  }
+
+  void _onDetect(BarcodeCapture capture) {
+    if (_result != null) return;
+    final raw = capture.barcodes.isEmpty
+        ? ''
+        : (capture.barcodes.first.rawValue ?? '');
+    _showResult(
+      valid: raw.contains('TKTSAPP_DEMO_VALID'),
+      title: raw.contains('TKTSAPP_DEMO_VALID')
+          ? 'Ticket valid'
+          : 'Ticket unavailable',
+      message: raw.contains('TKTSAPP_DEMO_VALID')
+          ? 'Demo General Admission · Entry granted'
+          : 'This demo code is invalid or already used.',
+    );
+  }
+
+  Future<void> _reset() async {
+    setState(() => _result = null);
+    await _camera.start();
+  }
+
+  @override
+  void dispose() {
+    _camera.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    backgroundColor: Colors.black,
+    appBar: AppBar(
+      backgroundColor: Colors.black,
+      foregroundColor: Colors.white,
+      title: const Text('Demo · Main Entrance'),
+    ),
+    body: Stack(
+      children: [
+        MobileScanner(controller: _camera, onDetect: _onDetect),
+        Center(
+          child: Container(
+            width: 246,
+            height: 246,
+            decoration: BoxDecoration(
+              border: Border.all(color: _gold, width: 3),
+              borderRadius: BorderRadius.circular(22),
+            ),
+          ),
+        ),
+        Positioned(
+          left: 20,
+          right: 20,
+          bottom: 28,
+          child: _result == null
+              ? Column(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: Colors.black87,
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: const Text(
+                        'Scan a demo QR, or use a sample outcome below.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Colors.white),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => _showResult(
+                              valid: true,
+                              title: 'Ticket valid',
+                              message: 'Demo General Admission · Entry granted',
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.white,
+                            ),
+                            child: const Text('Test valid'),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => _showResult(
+                              valid: false,
+                              title: 'Already used',
+                              message:
+                                  'This demo ticket has already been checked in.',
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.white,
+                            ),
+                            child: const Text('Test used'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                )
+              : Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: _valid
+                        ? const Color(0xFF164A2A)
+                        : const Color(0xFF831A21),
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        _valid
+                            ? Icons.verified_rounded
+                            : Icons.error_outline_rounded,
+                        color: Colors.white,
+                        size: 40,
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        _result!.split('\n').first,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 21,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        _result!.split('\n').last,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                      const SizedBox(height: 14),
+                      FilledButton(
+                        onPressed: _reset,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: _charcoal,
+                        ),
+                        child: const Text('Next demo scan'),
+                      ),
+                    ],
+                  ),
+                ),
+        ),
+      ],
+    ),
+  );
+}
+
+class OrganizerApplicationScreen extends StatefulWidget {
+  const OrganizerApplicationScreen({super.key, required this.api});
+  final ApiClient api;
+
+  @override
+  State<OrganizerApplicationScreen> createState() =>
+      _OrganizerApplicationScreenState();
+}
+
+class _OrganizerApplicationScreenState
+    extends State<OrganizerApplicationScreen> {
+  final _formKey = GlobalKey<FormState>();
+  final _name = TextEditingController();
+  final _organization = TextEditingController();
+  final _email = TextEditingController();
+  final _phone = TextEditingController();
+  final _password = TextEditingController();
+  final _confirmPassword = TextEditingController();
+  bool _working = false;
+  bool _submitted = false;
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _organization.dispose();
+    _email.dispose();
+    _phone.dispose();
+    _password.dispose();
+    _confirmPassword.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+    setState(() => _working = true);
+    try {
+      await widget.api.post(
+        '/mobile/auth/organizer-applications',
+        data: {
+          'contact_name': _name.text.trim(),
+          'organization_name': _organization.text.trim(),
+          'email': _email.text.trim().toLowerCase(),
+          'phone': _phone.text.trim(),
+          'password': _password.text,
+          'password_confirmation': _confirmPassword.text,
+        },
+      );
+      if (mounted) setState(() => _submitted = true);
+    } on ApiFailure catch (error) {
+      if (mounted) _message(context, error.message, error: true);
+    } finally {
+      if (mounted) setState(() => _working = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    backgroundColor: _ivory,
+    appBar: AppBar(
+      title: const Text('Create organizer workspace'),
+      backgroundColor: _ivory,
+      foregroundColor: _charcoal,
+    ),
+    body: SafeArea(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(24, 12, 24, 36),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: _submitted
+              ? _PendingOrganizerApplication(
+                  onDone: () => Navigator.of(context).pop(),
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      'Bring your event team to TKTSAPP.',
+                      style: GoogleFonts.spaceGrotesk(
+                        fontSize: 30,
+                        fontWeight: FontWeight.w800,
+                        color: _charcoal,
+                        height: 1.05,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    const Text(
+                      'Submit your organization details. A platform administrator will review and link your account before you can access events or scanning.',
+                    ),
+                    const SizedBox(height: 24),
+                    Form(
+                      key: _formKey,
+                      child: Column(
+                        children: [
+                          TextFormField(
+                            controller: _name,
+                            textInputAction: TextInputAction.next,
+                            decoration: const InputDecoration(
+                              labelText: 'Your full name',
+                            ),
+                            validator: (v) => (v?.trim().isNotEmpty ?? false)
+                                ? null
+                                : 'Enter your name.',
+                          ),
+                          const SizedBox(height: 12),
+                          TextFormField(
+                            controller: _organization,
+                            textInputAction: TextInputAction.next,
+                            decoration: const InputDecoration(
+                              labelText: 'Organization / venue name',
+                            ),
+                            validator: (v) => (v?.trim().isNotEmpty ?? false)
+                                ? null
+                                : 'Enter your organization name.',
+                          ),
+                          const SizedBox(height: 12),
+                          TextFormField(
+                            controller: _email,
+                            keyboardType: TextInputType.emailAddress,
+                            textInputAction: TextInputAction.next,
+                            decoration: const InputDecoration(
+                              labelText: 'Work email',
+                            ),
+                            validator: (v) => (v?.contains('@') ?? false)
+                                ? null
+                                : 'Enter a valid email.',
+                          ),
+                          const SizedBox(height: 12),
+                          TextFormField(
+                            controller: _phone,
+                            keyboardType: TextInputType.phone,
+                            textInputAction: TextInputAction.next,
+                            decoration: const InputDecoration(
+                              labelText: 'Egyptian mobile number',
+                              hintText: '+20 110 000 0000',
+                            ),
+                            validator: (v) => (v?.trim().isNotEmpty ?? false)
+                                ? null
+                                : 'Enter your mobile number.',
+                          ),
+                          const SizedBox(height: 12),
+                          TextFormField(
+                            controller: _password,
+                            obscureText: true,
+                            textInputAction: TextInputAction.next,
+                            decoration: const InputDecoration(
+                              labelText: 'Password',
+                            ),
+                            validator: (v) => (v?.length ?? 0) >= 8
+                                ? null
+                                : 'Use at least 8 characters.',
+                          ),
+                          const SizedBox(height: 12),
+                          TextFormField(
+                            controller: _confirmPassword,
+                            obscureText: true,
+                            onFieldSubmitted: (_) => _submit(),
+                            decoration: const InputDecoration(
+                              labelText: 'Confirm password',
+                            ),
+                            validator: (v) => v == _password.text
+                                ? null
+                                : 'Passwords do not match.',
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    FilledButton(
+                      onPressed: _working ? null : _submit,
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size.fromHeight(54),
+                        backgroundColor: _burgundy,
+                      ),
+                      child: _working
+                          ? const SizedBox.square(
+                              dimension: 22,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Text('Submit for approval'),
+                    ),
+                  ],
+                ),
+        ),
+      ),
+    ),
+  );
+}
+
+class _PendingOrganizerApplication extends StatelessWidget {
+  const _PendingOrganizerApplication({required this.onDone});
+  final VoidCallback onDone;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    margin: const EdgeInsets.only(top: 56),
+    padding: const EdgeInsets.all(28),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(24),
+    ),
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const CircleAvatar(
+          radius: 34,
+          backgroundColor: Color(0xFFFFEAC2),
+          child: Icon(Icons.hourglass_top_rounded, color: _burgundy, size: 34),
+        ),
+        const SizedBox(height: 20),
+        Text(
+          'Application submitted',
+          style: GoogleFonts.spaceGrotesk(
+            fontSize: 24,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 10),
+        const Text(
+          'Your organizer workspace is pending platform review. We will link your account to the correct organization before you can sign in.',
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 24),
+        FilledButton(onPressed: onDone, child: const Text('Back to sign in')),
       ],
     ),
   );

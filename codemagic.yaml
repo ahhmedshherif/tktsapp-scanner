@@ -65,7 +65,10 @@ workflows:
       - name: Apply Codemagic App Store signing profile
         script: xcode-project use-profiles
       - name: Build IPA
-        script: flutter build ipa --release --build-number=$BUILD_NUMBER --export-options-plist=/Users/builder/export_options.plist --dart-define=API_BASE_URL=$API_BASE_URL --dart-define=ONESIGNAL_APP_ID=$ONESIGNAL_APP_ID
+        # The pubspec build number is deliberately authoritative here. It is
+        # bumped before every release, preventing Codemagic's job counter from
+        # ever producing an App Store Connect build lower than the last one.
+        script: flutter build ipa --release --export-options-plist=/Users/builder/export_options.plist --dart-define=API_BASE_URL=$API_BASE_URL --dart-define=ONESIGNAL_APP_ID=$ONESIGNAL_APP_ID
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
